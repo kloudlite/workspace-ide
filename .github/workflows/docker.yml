@@ -22,20 +22,18 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H kmac.khost.dev >> ~/.ssh/known_hosts
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-
-      - name: Set up Dagger
-        uses: dagger/dagger-for-github@v7
-        with:
-          version: "latest"
-
-      - name: Build and publish
-        run: |
-          TAG="${{ github.ref_name == 'master' && 'latest' || github.ref_name }}"
-          DOCKER_HOST=ssh://karthik@kmac.khost.dev dagger call publish \
-            --address ghcr.io/kloudlite/workspace-ide:$TAG
+      - name: Build and push on remote host
         env:
-          DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+          TAG: ${{ github.ref_name == 'master' && 'latest' || github.ref_name }}
+          IMAGE: ghcr.io/kloudlite/workspace-ide
+        run: |
+          tar czf - --exclude target --exclude .git . | ssh karthik@kmac.khost.dev "
+            rm -rf /tmp/ws-build
+            mkdir -p /tmp/ws-build
+            cd /tmp/ws-build
+            tar xzf -
+            docker run --rm -v /tmp/ws-build:/src -w /src rust:latest cargo build --release
+            docker build -t ws:temp -f Dockerfile .
+            docker tag ws:temp $IMAGE:$TAG
+            docker push $IMAGE:$TAG
+          "
