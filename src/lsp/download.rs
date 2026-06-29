@@ -3,11 +3,20 @@ use std::path::PathBuf;
 // ponytail: minimal download helpers; handles GitHub releases and npm
 pub enum LspInstall {
     /// Download from GitHub releases (e.g. terraform-ls, rust-analyzer)
-    GitHubRelease { repo: &'static str, name: &'static str },
+    GitHubRelease {
+        repo: &'static str,
+        name: &'static str,
+    },
     /// Install via npm (e.g. typescript-language-server, vue-language-server)
-    Npm { package: &'static str, binary: &'static str },
+    Npm {
+        package: &'static str,
+        binary: &'static str,
+    },
     /// Install via cargo (e.g. rust-analyzer, taplo)
-    Cargo { crate_name: &'static str, binary: &'static str },
+    Cargo {
+        crate_name: &'static str,
+        binary: &'static str,
+    },
     /// Expect the binary to already be on PATH
     System { binary: &'static str },
 }
@@ -48,7 +57,10 @@ pub fn ensure(install: &LspInstall) -> Result<PathBuf, String> {
 
     match install {
         LspInstall::System { .. } => {
-            return Err(format!("{} not found on PATH. Please install it manually.", binary));
+            return Err(format!(
+                "{} not found on PATH. Please install it manually.",
+                binary
+            ));
         }
         LspInstall::Npm { package, binary } => {
             install_npm(package, binary)?;
@@ -86,7 +98,13 @@ fn install_npm(package: &str, binary: &str) -> Result<(), String> {
     let target = lsp_dir();
     eprintln!("ws: installing {} via npm...", package);
     let status = std::process::Command::new("npm")
-        .args(["install", "-g", "--prefix", &target.to_string_lossy(), package])
+        .args([
+            "install",
+            "-g",
+            "--prefix",
+            &target.to_string_lossy(),
+            package,
+        ])
         .status()
         .map_err(|e| format!("npm install failed: {}", e))?;
     if !status.success() {
@@ -147,27 +165,45 @@ fn download_github_release(repo: &str, binary_name: &str) -> Result<(), String> 
         .user_agent("ws-ide")
         .build()
         .map_err(|e| format!("http client: {}", e))?;
-    let resp = client.get(&url).send().map_err(|e| format!("fetch releases: {}", e))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("fetch releases: {}", e))?;
     let release: serde_json::Value = resp.json().map_err(|e| format!("parse release: {}", e))?;
 
     let tag = release["tag_name"].as_str().unwrap_or("latest");
-    eprintln!("ws: downloading {} {} ({}/{})...", binary_name, tag, gh_os, gh_arch);
+    eprintln!(
+        "ws: downloading {} {} ({}/{})...",
+        binary_name, tag, gh_os, gh_arch
+    );
 
     // Find matching asset
     let assets = release["assets"].as_array().ok_or("no assets")?;
-    let asset = assets.iter().find(|a| {
-        let name = a["name"].as_str().unwrap_or("");
-        let lower = name.to_lowercase();
-        lower.contains(gh_arch) && lower.contains(gh_os) && lower.contains(binary_name)
-    }).ok_or_else(|| format!("no matching asset for {}/{} in {}", gh_os, gh_arch, repo))?;
+    let asset = assets
+        .iter()
+        .find(|a| {
+            let name = a["name"].as_str().unwrap_or("");
+            let lower = name.to_lowercase();
+            lower.contains(gh_arch) && lower.contains(gh_os) && lower.contains(binary_name)
+        })
+        .ok_or_else(|| format!("no matching asset for {}/{} in {}", gh_os, gh_arch, repo))?;
 
-    let download_url = asset["browser_download_url"].as_str().ok_or("no download url")?;
+    let download_url = asset["browser_download_url"]
+        .as_str()
+        .ok_or("no download url")?;
 
     // Download
-    let resp = client.get(download_url).send().map_err(|e| format!("download: {}", e))?;
+    let resp = client
+        .get(download_url)
+        .send()
+        .map_err(|e| format!("download: {}", e))?;
     let bytes = resp.bytes().map_err(|e| format!("read: {}", e))?;
 
-    let ext = if download_url.ends_with(".zip") { "zip" } else { "tar.gz" };
+    let ext = if download_url.ends_with(".zip") {
+        "zip"
+    } else {
+        "tar.gz"
+    };
     let archive_path = target.join(format!("{}.{}", binary_name, ext));
     std::fs::write(&archive_path, &bytes).map_err(|e| format!("write: {}", e))?;
 
@@ -175,7 +211,12 @@ fn download_github_release(repo: &str, binary_name: &str) -> Result<(), String> 
     if ext == "zip" {
         // unzip
         let status = std::process::Command::new("unzip")
-            .args(["-o", &archive_path.to_string_lossy(), "-d", &target.to_string_lossy()])
+            .args([
+                "-o",
+                &archive_path.to_string_lossy(),
+                "-d",
+                &target.to_string_lossy(),
+            ])
             .status()
             .map_err(|e| format!("unzip: {}", e))?;
         if !status.success() {
@@ -184,7 +225,12 @@ fn download_github_release(repo: &str, binary_name: &str) -> Result<(), String> 
     } else {
         // tar xzf
         let status = std::process::Command::new("tar")
-            .args(["xzf", &archive_path.to_string_lossy(), "-C", &target.to_string_lossy()])
+            .args([
+                "xzf",
+                &archive_path.to_string_lossy(),
+                "-C",
+                &target.to_string_lossy(),
+            ])
             .status()
             .map_err(|e| format!("tar: {}", e))?;
         if !status.success() {
@@ -206,7 +252,9 @@ fn download_github_release(repo: &str, binary_name: &str) -> Result<(), String> 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::metadata(&bin_path).map_err(|e| format!("metadata: {}", e))?.permissions();
+            let perms = std::fs::metadata(&bin_path)
+                .map_err(|e| format!("metadata: {}", e))?
+                .permissions();
             let mut perms = perms;
             perms.set_mode(0o755);
             std::fs::set_permissions(&bin_path, perms).map_err(|e| format!("chmod: {}", e))?;
@@ -224,18 +272,28 @@ fn find_extracted_binary(dir: &std::path::Path, name: &str) -> Option<std::path:
     for entry in entries.flatten() {
         let path = entry.path();
         let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if path.is_file() && fname.contains(name) && !fname.ends_with(".tar.gz") && !fname.ends_with(".zip") {
+        if path.is_file()
+            && fname.contains(name)
+            && !fname.ends_with(".tar.gz")
+            && !fname.ends_with(".zip")
+        {
             return Some(path);
         }
     }
     // One level deep
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
         let path = entry.path();
-        if !path.is_dir() { continue; }
+        if !path.is_dir() {
+            continue;
+        }
         for sub in std::fs::read_dir(&path).ok()?.flatten() {
             let sub_path = sub.path();
             let fname = sub_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if sub_path.is_file() && fname.contains(name) && !fname.ends_with(".tar.gz") && !fname.ends_with(".zip") {
+            if sub_path.is_file()
+                && fname.contains(name)
+                && !fname.ends_with(".tar.gz")
+                && !fname.ends_with(".zip")
+            {
                 return Some(sub_path);
             }
         }

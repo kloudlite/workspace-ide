@@ -1,6 +1,5 @@
 /// Nix package manager — host daemon, shared store, per-HOME profiles
 /// ponytail: each container has its own HOME → own profile. No custom dirs.
-
 use std::path::Path;
 use std::process::Command;
 
@@ -45,9 +44,8 @@ fn find_nix() -> Option<String> {
 }
 
 fn nix_cmd() -> Result<Command, String> {
-    let nix = find_nix().ok_or_else(|| {
-        "Nix not found. Mount /nix from host: -v /nix:/nix".to_string()
-    })?;
+    let nix = find_nix()
+        .ok_or_else(|| "Nix not found. Mount /nix from host: -v /nix:/nix".to_string())?;
     let mut cmd = Command::new(&nix);
     cmd.env("NIX_REMOTE", "daemon");
     cmd.arg("--extra-experimental-features");
@@ -76,7 +74,10 @@ pub fn search(query: &str) -> Result<Vec<String>, String> {
         .args(["search", "nixpkgs", query])
         .output()
         .map_err(|e| format!("nix search: {}", e))?;
-    Ok(String::from_utf8_lossy(&output.stdout).lines().map(|l| l.to_string()).collect())
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|l| l.to_string())
+        .collect())
 }
 
 pub fn list() -> Result<Vec<String>, String> {
@@ -88,7 +89,8 @@ pub fn list() -> Result<Vec<String>, String> {
     // JSON format: {"elements":{"name":{...}},"version":3}
     match serde_json::from_str::<serde_json::Value>(&stdout) {
         Ok(val) => {
-            let names: Vec<String> = val.get("elements")
+            let names: Vec<String> = val
+                .get("elements")
                 .and_then(|e| e.as_object())
                 .map(|obj| obj.keys().cloned().collect())
                 .unwrap_or_default();

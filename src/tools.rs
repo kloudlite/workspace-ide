@@ -93,28 +93,25 @@ pub async fn run_bash(command: &str, timeout_secs: Option<u64>) -> BashResult {
     child.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let output = match timeout_secs {
-        Some(secs) => match tokio::time::timeout(
-            std::time::Duration::from_secs(secs),
-            child.output(),
-        )
-        .await
-        {
-            Ok(Ok(o)) => o,
-            Ok(Err(e)) => {
-                return BashResult {
-                    stdout: String::new(),
-                    stderr: e.to_string(),
-                    exit_code: -1,
-                };
+        Some(secs) => {
+            match tokio::time::timeout(std::time::Duration::from_secs(secs), child.output()).await {
+                Ok(Ok(o)) => o,
+                Ok(Err(e)) => {
+                    return BashResult {
+                        stdout: String::new(),
+                        stderr: e.to_string(),
+                        exit_code: -1,
+                    };
+                }
+                Err(_) => {
+                    return BashResult {
+                        stdout: String::new(),
+                        stderr: "command timed out".into(),
+                        exit_code: -1,
+                    };
+                }
             }
-            Err(_) => {
-                return BashResult {
-                    stdout: String::new(),
-                    stderr: "command timed out".into(),
-                    exit_code: -1,
-                };
-            }
-        },
+        }
         None => match child.output().await {
             Ok(o) => o,
             Err(e) => {
@@ -169,7 +166,9 @@ pub async fn write_file(path: &str, content: &str) -> Result<WriteResult, ToolEr
 pub async fn grep_files(pattern: &str, search_path: Option<&str>) -> Result<GrepResult, ToolError> {
     let path = search_path.unwrap_or(".");
     // ponytail: canonicalize to handle /tmp -> /private/tmp symlinks
-    let canonical = std::path::Path::new(path).canonicalize().unwrap_or_else(|_| std::path::PathBuf::from(path));
+    let canonical = std::path::Path::new(path)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(path));
     // ponytail: uses grep -rnHI; ripgrep (rg --json) is faster for large codebases
     let output = Command::new("grep")
         .args(["-rnHI", "--"])
@@ -202,7 +201,9 @@ pub async fn grep_files(pattern: &str, search_path: Option<&str>) -> Result<Grep
 
 pub async fn find_files(path: &str, name: Option<&str>) -> Result<FindResult, ToolError> {
     // ponytail: uses find (always available); fd is faster for large trees
-    let canonical = std::path::Path::new(path).canonicalize().unwrap_or_else(|_| std::path::PathBuf::from(path));
+    let canonical = std::path::Path::new(path)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(path));
     let mut cmd = Command::new("find");
     cmd.arg(canonical.as_os_str());
     cmd.arg("-type").arg("f");
@@ -273,7 +274,10 @@ pub fn generate_session_id() -> String {
     format!("{:016x}", nanos)
 }
 
-fn pump_to_file(stream: impl tokio::io::AsyncRead + Unpin + Send + 'static, path: std::path::PathBuf) {
+fn pump_to_file(
+    stream: impl tokio::io::AsyncRead + Unpin + Send + 'static,
+    path: std::path::PathBuf,
+) {
     tokio::spawn(async move {
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         let mut file = tokio::fs::File::create(&path).await.unwrap();
@@ -283,7 +287,9 @@ fn pump_to_file(stream: impl tokio::io::AsyncRead + Unpin + Send + 'static, path
             buf.clear();
             match reader.read_until(b'\n', &mut buf).await {
                 Ok(0) => break,
-                Ok(_) => { file.write_all(&buf).await.unwrap(); }
+                Ok(_) => {
+                    file.write_all(&buf).await.unwrap();
+                }
                 Err(_) => break,
             }
         }
@@ -316,13 +322,16 @@ pub async fn spawn_bash(command: &str) -> Result<SpawnResult, ToolError> {
     // Register session
     {
         let mut map = sessions().lock().unwrap();
-        map.insert(session_id.clone(), SessionState {
-            pid,
-            command: command.to_string(),
-            log_dir,
-            running: true,
-            exit_code: None,
-        });
+        map.insert(
+            session_id.clone(),
+            SessionState {
+                pid,
+                command: command.to_string(),
+                log_dir,
+                running: true,
+                exit_code: None,
+            },
+        );
     }
 
     // Watch for completion
@@ -343,21 +352,36 @@ pub async fn spawn_bash(command: &str) -> Result<SpawnResult, ToolError> {
 pub async fn get_logs(session_id: &str) -> Result<LogsResult, ToolError> {
     let (running, exit_code, log_dir) = {
         let map = sessions().lock().unwrap();
-        let s = map.get(session_id).ok_or_else(|| ToolError("session not found".into()))?;
+        let s = map
+            .get(session_id)
+            .ok_or_else(|| ToolError("session not found".into()))?;
         (s.running, s.exit_code, s.log_dir.clone())
     };
 
-    let stdout = tokio::fs::read_to_string(log_dir.join("stdout")).await.unwrap_or_default();
-    let stderr = tokio::fs::read_to_string(log_dir.join("stderr")).await.unwrap_or_default();
+    let stdout = tokio::fs::read_to_string(log_dir.join("stdout"))
+        .await
+        .unwrap_or_default();
+    let stderr = tokio::fs::read_to_string(log_dir.join("stderr"))
+        .await
+        .unwrap_or_default();
     let stdout_len = stdout.len() as u64;
     let stderr_len = stderr.len() as u64;
 
-    Ok(LogsResult { stdout, stderr, stdout_len, stderr_len, running, exit_code })
+    Ok(LogsResult {
+        stdout,
+        stderr,
+        stdout_len,
+        stderr_len,
+        running,
+        exit_code,
+    })
 }
 
 pub async fn get_status(session_id: &str) -> Result<StatusResult, ToolError> {
     let map = sessions().lock().unwrap();
-    let s = map.get(session_id).ok_or_else(|| ToolError("session not found".into()))?;
+    let s = map
+        .get(session_id)
+        .ok_or_else(|| ToolError("session not found".into()))?;
     Ok(StatusResult {
         session_id: session_id.to_string(),
         pid: s.pid,
@@ -370,15 +394,23 @@ pub async fn get_status(session_id: &str) -> Result<StatusResult, ToolError> {
 pub async fn kill_session(session_id: &str) -> Result<KillResult, ToolError> {
     let pid = {
         let map = sessions().lock().unwrap();
-        let s = map.get(session_id).ok_or_else(|| ToolError("session not found".into()))?;
+        let s = map
+            .get(session_id)
+            .ok_or_else(|| ToolError("session not found".into()))?;
         if !s.running {
-            return Ok(KillResult { killed: false, message: "already exited".into() });
+            return Ok(KillResult {
+                killed: false,
+                message: "already exited".into(),
+            });
         }
         s.pid
     };
 
     if pid == 0 {
-        return Ok(KillResult { killed: false, message: "no pid".into() });
+        return Ok(KillResult {
+            killed: false,
+            message: "no pid".into(),
+        });
     }
 
     // ponytail: kill via `kill` command; signal(SIGTERM) more direct but adds dep
@@ -394,21 +426,29 @@ pub async fn kill_session(session_id: &str) -> Result<KillResult, ToolError> {
             s.running = false;
             s.exit_code = s.exit_code.or(Some(-15));
         }
-        Ok(KillResult { killed: true, message: "SIGTERM sent".into() })
+        Ok(KillResult {
+            killed: true,
+            message: "SIGTERM sent".into(),
+        })
     } else {
-        Ok(KillResult { killed: false, message: "kill command failed".into() })
+        Ok(KillResult {
+            killed: false,
+            message: "kill command failed".into(),
+        })
     }
 }
 
 pub async fn list_sessions() -> Vec<StatusResult> {
     let map = sessions().lock().unwrap();
-    map.iter().map(|(id, s)| StatusResult {
-        session_id: id.clone(),
-        pid: s.pid,
-        command: s.command.clone(),
-        running: s.running,
-        exit_code: s.exit_code,
-    }).collect()
+    map.iter()
+        .map(|(id, s)| StatusResult {
+            session_id: id.clone(),
+            pid: s.pid,
+            command: s.command.clone(),
+            running: s.running,
+            exit_code: s.exit_code,
+        })
+        .collect()
 }
 
 pub async fn list_dir(path: &str) -> Result<LsResult, ToolError> {
