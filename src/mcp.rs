@@ -291,10 +291,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<Value, String> {
         "sessions" => Ok(json!(tools::list_sessions().await)),
         "diagnose" => {
             let path = get_str(args, "path")?;
-            crate::lsp::diagnose_file(path)
-                .await
-                .map(|r| json!(r))
-                .map_err(|e| e)
+            Ok(json!(crate::lsp::diagnose_file(path).await?))
         }
         "lsp_sessions" => Ok(json!(crate::lsp::list_sessions())),
         _ => Err(format!("Unknown tool: {}", name)),

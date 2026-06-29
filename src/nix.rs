@@ -5,12 +5,6 @@ use std::process::Command;
 
 const NIX_BIN: &str = "/nix/var/nix/profiles/default/bin/nix";
 const NIX_PROFILE_BIN: &str = "/nix/var/nix/profiles/default/bin";
-const NIX_SOCKET: &str = "/nix/var/nix/daemon-socket/socket";
-
-/// Check if Nix is available via host mount
-pub fn is_available() -> bool {
-    Path::new(NIX_SOCKET).exists() && Path::new("/nix/store").is_dir()
-}
 
 /// Add nix binaries to PATH at startup
 pub fn setup_env() {

@@ -130,10 +130,12 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
             .await
             .unwrap_or_default();
         let language_id = server::language_for_ext(&ext);
-        let mut stdin_guard = session.stdin.lock().unwrap();
-        if let Some(ref mut stdin) = *stdin_guard {
-            send_did_open(stdin, file_path, &language_id, &content).await;
+        // ponytail: take stdin, send, put back — avoids holding MutexGuard across await
+        let mut owned = session.stdin.lock().unwrap().take();
+        if let Some(ref mut stdin) = owned {
+            send_did_open(stdin, file_path, language_id, &content).await;
         }
+        *session.stdin.lock().unwrap() = owned;
 
         // Read diagnostics (simplified: wait a bit for push diagnostics or request them)
         // ponytail: simple approach — wait 500ms and read push diagnostics
@@ -187,13 +189,9 @@ async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, Chi
                 Ok(_) => {
                     partial.extend_from_slice(&buf);
                     // Try to parse one or more JSON-RPC messages
-                    loop {
-                        if let Ok((msg, rest)) = parse_jsonrpc(&partial) {
-                            partial = rest.to_vec();
-                            process_message(&sid, &msg, &diags).await;
-                        } else {
-                            break;
-                        }
+                    while let Ok((msg, rest)) = parse_jsonrpc(&partial) {
+                        partial = rest.to_vec();
+                        process_message(&sid, &msg, &diags).await;
                     }
                 }
                 Err(_) => break,
@@ -381,9 +379,9 @@ pub fn cleanup_idle() -> usize {
     let now = Instant::now();
     let mut alive = Vec::new();
     let mut killed = 0usize;
-    for mut sess in s.sessions.drain(..) {
+    for sess in s.sessions.drain(..) {
         if now.duration_since(sess.last_active) > IDLE_TIMEOUT {
-            if let Some(mut child) = sess.process.lock().unwrap().take() {
+            if let Some(child) = sess.process.lock().unwrap().take() {
                 let _ = std::process::Command::new("kill")
                     .arg(child.id().unwrap_or(0).to_string())
                     .status();
