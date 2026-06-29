@@ -185,11 +185,7 @@ fn do_scan(
     }
 }
 
-fn walk_dir(
-    dir: &Path,
-    mtimes: &mut HashMap<String, SystemTime>,
-    changed: &mut Vec<String>,
-) {
+fn walk_dir(dir: &Path, mtimes: &mut HashMap<String, SystemTime>, changed: &mut Vec<String>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
