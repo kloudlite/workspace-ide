@@ -93,7 +93,11 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
         // Check if we have a running session for this server+root
         let session = {
             let mut s = state().lock().unwrap();
-            if let Some(existing) = s.sessions.iter_mut().find(|sess| sess.server_id == sid && sess.root == root) {
+            if let Some(existing) = s
+                .sessions
+                .iter_mut()
+                .find(|sess| sess.server_id == sid && sess.root == root)
+            {
                 existing.last_active = Instant::now();
                 Some(existing.clone())
             } else {
@@ -122,7 +126,9 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
         };
 
         // Send didOpen
-        let content = tokio::fs::read_to_string(file_path).await.unwrap_or_default();
+        let content = tokio::fs::read_to_string(file_path)
+            .await
+            .unwrap_or_default();
         let language_id = server::language_for_ext(&ext);
         let mut stdin_guard = session.stdin.lock().unwrap();
         if let Some(ref mut stdin) = *stdin_guard {
@@ -159,7 +165,9 @@ async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, Chi
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("spawn {}: {}", svr.id, e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("spawn {}: {}", svr.id, e))?;
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
 
@@ -293,11 +301,27 @@ async fn process_message(_sid: &str, msg: &serde_json::Value, diags: &Arc<Mutex<
                 for d in diagnostics {
                     if let Some(range) = d.get("range").and_then(|r| r.get("start")) {
                         let line = range.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                        let col = range.get("character").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                        let severity = d.get("severity").and_then(|v| v.as_u64()).unwrap_or(1) as u8;
-                        let message = d.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let code = d.get("code").and_then(|v| v.as_str()).map(|s| s.to_string());
-                        collected.push(Diagnostic { path: path.clone(), line, column: col, severity, message, code });
+                        let col =
+                            range.get("character").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                        let severity =
+                            d.get("severity").and_then(|v| v.as_u64()).unwrap_or(1) as u8;
+                        let message = d
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let code = d
+                            .get("code")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        collected.push(Diagnostic {
+                            path: path.clone(),
+                            line,
+                            column: col,
+                            severity,
+                            message,
+                            code,
+                        });
                     }
                 }
                 let mut d = diags.lock().unwrap();
@@ -320,7 +344,14 @@ fn find_root(file_path: &str, needs_lockfile: bool) -> String {
     }
 
     // Walk up to find lockfile
-    let lockfiles = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "bun.lock", "Cargo.lock"];
+    let lockfiles = [
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "bun.lockb",
+        "bun.lock",
+        "Cargo.lock",
+    ];
     let mut current = Some(dir);
     while let Some(d) = current {
         for lf in &lockfiles {
@@ -338,7 +369,10 @@ fn find_root(file_path: &str, needs_lockfile: bool) -> String {
 /// Get a list of running LSP sessions
 pub fn list_sessions() -> Vec<(String, String)> {
     let s = state().lock().unwrap();
-    s.sessions.iter().map(|sess| (sess.server_id.clone(), sess.root.clone())).collect()
+    s.sessions
+        .iter()
+        .map(|sess| (sess.server_id.clone(), sess.root.clone()))
+        .collect()
 }
 
 /// Kill sessions idle longer than IDLE_TIMEOUT
@@ -362,5 +396,3 @@ pub fn cleanup_idle() -> usize {
     s.sessions = alive;
     killed
 }
-
-

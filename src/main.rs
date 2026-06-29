@@ -1,9 +1,9 @@
-mod tools;
-mod server;
-mod mcp;
 mod lsp;
-mod watch;
+mod mcp;
 mod nix;
+mod server;
+mod tools;
+mod watch;
 
 use clap::{Parser, Subcommand};
 use serde_json::json;
@@ -36,13 +36,24 @@ enum Command {
     /// Execute a shell command
     Bash { command: String },
     /// Edit a file with text replacements
-    Edit { path: String, old_text: String, new_text: String },
+    Edit {
+        path: String,
+        old_text: String,
+        new_text: String,
+    },
     /// Write content to a file
     Write { path: String, content: String },
     /// Search for a pattern in files
-    Grep { pattern: String, path: Option<String> },
+    Grep {
+        pattern: String,
+        path: Option<String>,
+    },
     /// Find files matching a pattern
-    Find { path: String, #[arg(long)] name: Option<String> },
+    Find {
+        path: String,
+        #[arg(long)]
+        name: Option<String>,
+    },
     /// List directory contents
     Ls { path: String },
     /// Start a background command on the server
@@ -121,7 +132,11 @@ async fn start_server(port: u16) {
         .expect("bind failed");
 
     let app = server::router();
-    println!("ws {} listening on http://{}", env!("CARGO_PKG_VERSION"), addr);
+    println!(
+        "ws {} listening on http://{}",
+        env!("CARGO_PKG_VERSION"),
+        addr
+    );
 
     // Start file watcher in background (non-blocking)
     let _ = watch::start_watch(".");
@@ -146,7 +161,11 @@ async fn remote_call(server: &str, cmd: &Command) {
                     println!("{}", resp.text().await.unwrap_or_default());
                 }
                 Ok(resp) => {
-                    eprintln!("sessions {}: {}", resp.status(), resp.text().await.unwrap_or_default());
+                    eprintln!(
+                        "sessions {}: {}",
+                        resp.status(),
+                        resp.text().await.unwrap_or_default()
+                    );
                     std::process::exit(1);
                 }
                 Err(e) => connection_error(server, e),
@@ -160,7 +179,12 @@ async fn remote_call(server: &str, cmd: &Command) {
                     println!("{}", resp.text().await.unwrap_or_default());
                 }
                 Ok(resp) => {
-                    eprintln!("{} {}: {}", method, resp.status(), resp.text().await.unwrap_or_default());
+                    eprintln!(
+                        "{} {}: {}",
+                        method,
+                        resp.status(),
+                        resp.text().await.unwrap_or_default()
+                    );
                     std::process::exit(1);
                 }
                 Err(e) => connection_error(server, e),
@@ -180,7 +204,11 @@ fn build_request(cmd: &Command) -> (&'static str, serde_json::Value) {
     match cmd {
         Command::Read { path } => ("read", json!({ "path": path })),
         Command::Bash { command } => ("bash", json!({ "command": command })),
-        Command::Edit { path, old_text, new_text } => (
+        Command::Edit {
+            path,
+            old_text,
+            new_text,
+        } => (
             "edit",
             json!({ "path": path, "edits": [{"old_text": old_text, "new_text": new_text}] }),
         ),
@@ -193,6 +221,10 @@ fn build_request(cmd: &Command) -> (&'static str, serde_json::Value) {
         Command::Status { session_id } => ("status", json!({ "session_id": session_id })),
         Command::Kill { session_id } => ("kill", json!({ "session_id": session_id })),
         Command::Diagnose { path } => ("diagnose", json!({ "path": path })),
-        Command::Nix { .. } | Command::LspSessions | Command::Sessions | Command::Serve { .. } | Command::Mcp => unreachable!(),
+        Command::Nix { .. }
+        | Command::LspSessions
+        | Command::Sessions
+        | Command::Serve { .. }
+        | Command::Mcp => unreachable!(),
     }
 }
