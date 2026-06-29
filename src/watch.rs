@@ -78,13 +78,12 @@ pub fn start_watch(root: &str) -> Result<(), String> {
             }
 
             let mut changed = Vec::new();
-            let now = SystemTime::now();
             let (root, mut mtimes) = {
                 let mut guard = watcher.lock().unwrap();
                 (guard.root.clone(), std::mem::take(&mut guard.mtimes))
             };
 
-            walk_dir(Path::new(&root), &mut mtimes, &now, &mut changed);
+            walk_dir(Path::new(&root), &mut mtimes, &mut changed);
 
             watcher.lock().unwrap().mtimes = mtimes;
 
@@ -189,7 +188,6 @@ fn do_scan(
 fn walk_dir(
     dir: &Path,
     mtimes: &mut HashMap<String, SystemTime>,
-    now: &SystemTime,
     changed: &mut Vec<String>,
 ) {
     let entries = match std::fs::read_dir(dir) {
@@ -204,7 +202,7 @@ fn walk_dir(
                     continue;
                 }
             }
-            walk_dir(&path, mtimes, now, changed);
+            walk_dir(&path, mtimes, changed);
             continue;
         }
         if !path.is_file() {
