@@ -35,7 +35,7 @@ jobs:
       - name: Build and publish
         run: |
           TAG="${{ github.ref_name == 'master' && 'latest' || github.ref_name }}"
-          DOCKER_HOST=ssh://${{ secrets.SSH_HOST }} dagger call container \
-            --publish ghcr.io/${{ github.repository }}:$TAG
+          DOCKER_HOST=ssh://${{ secrets.SSH_HOST }} dagger call publish \
+            --address ghcr.io/${{ github.repository }}:$TAG
         env:
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
