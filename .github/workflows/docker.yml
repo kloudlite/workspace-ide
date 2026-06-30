@@ -15,15 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up SSH key
+      - name: Write SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H kmac.khost.dev >> ~/.ssh/known_hosts 2>&1
+
+      - name: Scan host key
+        run: ssh-keyscan -H kmac.khost.dev >> ~/.ssh/known_hosts
 
       - name: Test SSH
-        run: ssh -o StrictHostKeyChecking=no karthik@kmac.khost.dev "docker info --format '{{.ServerVersion}}'"
+        run: ssh -o StrictHostKeyChecking=no karthik@kmac.khost.dev "echo connected"
 
       - uses: actions/setup-go@v5
         with:
