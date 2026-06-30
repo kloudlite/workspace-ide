@@ -95,9 +95,64 @@ pub fn sync() -> Result<String, String> {
 }
 
 pub fn search(query: &str) -> Result<Vec<String>, String> {
+    // Try NixOS search API first (fast), fall back to nix search CLI
+    match search_api(query) {
+        Ok(r) if !r.is_empty() => return Ok(r),
+        _ => {}
+    }
+    search_cli(query)
+}
+
+fn search_api(query: &str) -> Result<Vec<String>, String> {
+    let url = format!(
+        "https://api.search.nixos.org/packages?channel=unstable&query={}&limit=20",
+        urlencoding(query)
+    );
+    let resp = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build().map_err(|e| format!("client: {}", e))?
+        .get(&url).send().map_err(|e| format!("req: {}", e))?;
+    let body: serde_json::Value = resp.json().map_err(|e| format!("parse: {}", e))?;
+    let mut results = Vec::new();
+    if let Some(hits) = body.get("hits").and_then(|h| h.get("hits")).and_then(|a| a.as_array()) {
+        for hit in hits {
+            let src = hit.get("_source").or_else(|| hit.get("source"));
+            if let Some(s) = src {
+                let name = s.get("package_name").or(s.get("packagePkgname"))
+                    .and_then(|v| v.as_str()).unwrap_or("?");
+                let ver = s.get("package_version").or(s.get("version"))
+                    .and_then(|v| v.as_str()).unwrap_or("?");
+                let desc = s.get("package_description").or(s.get("description"))
+                    .and_then(|v| v.as_str()).unwrap_or("");
+                let d = if desc.len() > 80 { &desc[..80] } else { desc };
+                results.push(format!("{}  {}  {}", name, ver, d));
+            }
+        }
+    }
+    Ok(results)
+}
+
+fn search_cli(query: &str) -> Result<Vec<String>, String> {
     let output = nix_cmd()?.args(["search", "nixpkgs", query]).output()
         .map_err(|e| format!("nix search: {}", e))?;
     Ok(String::from_utf8_lossy(&output.stdout).lines().map(|l| l.to_string()).collect())
+}
+
+fn urlencoding(s: &str) -> String {
+    s.replace(' ', "%20")
+}
+
+fn resolve_flake_revision() -> Option<String> {
+    let content = std::fs::read_to_string("ws.lock").ok()?;
+    for line in content.lines() {
+        let t = line.trim();
+        if let Some(rev) = t.strip_prefix("nixpkgs_revision: \"") {
+            if let Some(rev) = rev.strip_suffix("\"") {
+                if !rev.is_empty() { return Some(rev.to_string()); }
+            }
+        }
+    }
+    None
 }
 
 pub fn list() -> Result<Vec<String>, String> {
