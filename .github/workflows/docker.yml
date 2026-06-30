@@ -18,9 +18,7 @@ jobs:
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
-          cat > ~/.ssh/id_ed25519 << EOF
-${{ secrets.SSH_KEY }}
-EOF
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H kmac.khost.dev >> ~/.ssh/known_hosts
 
@@ -30,12 +28,12 @@ EOF
           IMAGE: ghcr.io/kloudlite/workspace-ide
         run: |
           tar czf - --exclude target --exclude .git . | ssh karthik@kmac.khost.dev "
-            rm -rf /tmp/ws-build
-            mkdir -p /tmp/ws-build
-            cd /tmp/ws-build
-            tar xzf -
-            docker run --rm -v /tmp/ws-build:/src -w /src rust:latest cargo build --release
-            docker build -t ws:temp -f Dockerfile .
-            docker tag ws:temp $IMAGE:$TAG
+            rm -rf /tmp/ws-build &&
+            mkdir -p /tmp/ws-build &&
+            cd /tmp/ws-build &&
+            tar xzf - &&
+            docker run --rm -v /tmp/ws-build:/src -w /src rust:latest cargo build --release &&
+            docker build -t ws:temp -f Dockerfile . &&
+            docker tag ws:temp $IMAGE:$TAG &&
             docker push $IMAGE:$TAG
           "
