@@ -20,7 +20,10 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H kmac.khost.dev >> ~/.ssh/known_hosts
+          ssh-keyscan -H kmac.khost.dev >> ~/.ssh/known_hosts 2>&1
+
+      - name: Test SSH
+        run: ssh -o StrictHostKeyChecking=no karthik@kmac.khost.dev "docker info --format '{{.ServerVersion}}'"
 
       - uses: actions/setup-go@v5
         with:
