@@ -21,11 +21,14 @@ jobs:
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
 
-      - name: Scan host key
-        run: ssh-keyscan -H kmac.khost.dev >> ~/.ssh/known_hosts
+      - name: Configure SSH
+        run: |
+          echo "Host kmac.khost.dev" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "  UserKnownHostsFile /dev/null" >> ~/.ssh/config
 
       - name: Test SSH
-        run: ssh -o StrictHostKeyChecking=no karthik@kmac.khost.dev "echo connected"
+        run: ssh karthik@kmac.khost.dev "echo connected"
 
       - uses: actions/setup-go@v5
         with:
