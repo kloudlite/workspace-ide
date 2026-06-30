@@ -1,225 +1,149 @@
-use super::download::{LspInstall, LspInstall::*};
+// ponytail: binary name only — install via nix if not on PATH
 
-/// A supported LSP server
 pub struct LspServer {
     pub id: &'static str,
     pub extensions: &'static [&'static str],
-    pub install: LspInstall,
+    pub binary: &'static str,
     pub args: &'static [&'static str],
-    /// Optional startup env
-    pub env: &'static [(&'static str, &'static str)],
-    /// Languages that need a project root with a lockfile
     pub needs_lockfile: bool,
 }
 
-// ponytail: 20 LSP servers covering the most common languages
 pub static SERVERS: &[LspServer] = &[
     LspServer {
         id: "typescript",
         extensions: &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
-        install: Npm {
-            package: "typescript-language-server",
-            binary: "typescript-language-server",
-        },
+        binary: "typescript-language-server",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: true,
     },
     LspServer {
         id: "rust",
         extensions: &[".rs"],
-        install: Cargo {
-            crate_name: "rust-analyzer",
-            binary: "rust-analyzer",
-        },
+        binary: "rust-analyzer",
         args: &[],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "gopls",
         extensions: &[".go"],
-        install: System { binary: "gopls" },
+        binary: "gopls",
         args: &[],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "pyright",
         extensions: &[".py", ".pyi"],
-        install: Npm {
-            package: "pyright",
-            binary: "pyright-langserver",
-        },
+        binary: "pyright-langserver",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "clangd",
         extensions: &[".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh", ".hxx"],
-        install: System { binary: "clangd" },
+        binary: "clangd",
         args: &[],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "lua-ls",
         extensions: &[".lua"],
-        install: GitHubRelease {
-            repo: "LuaLS/lua-language-server",
-            name: "lua-language-server",
-        },
+        binary: "lua-language-server",
         args: &[],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "bashls",
         extensions: &[".sh", ".bash", ".zsh", ".ksh"],
-        install: Npm {
-            package: "bash-language-server",
-            binary: "bash-language-server",
-        },
+        binary: "bash-language-server",
         args: &["start"],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "yaml-ls",
         extensions: &[".yaml", ".yml"],
-        install: Npm {
-            package: "yaml-language-server",
-            binary: "yaml-language-server",
-        },
+        binary: "yaml-language-server",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "json-ls",
         extensions: &[".json", ".jsonc"],
-        install: Npm {
-            package: "vscode-json-languageserver",
-            binary: "json-languageserver",
-        },
+        binary: "json-languageserver",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "dockerfile-ls",
         extensions: &["Dockerfile", ".dockerfile"],
-        install: GitHubRelease {
-            repo: "rcjsuen/dockerfile-language-server-nodejs",
-            name: "dockerfile-langserver",
-        },
+        binary: "dockerfile-langserver",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "terraform",
         extensions: &[".tf", ".tfvars"],
-        install: GitHubRelease {
-            repo: "hashicorp/terraform-ls",
-            name: "terraform-ls",
-        },
+        binary: "terraform-ls",
         args: &["serve"],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "svelte",
         extensions: &[".svelte"],
-        install: Npm {
-            package: "@sveltejs/language-server",
-            binary: "svelte-language-server",
-        },
+        binary: "svelte-language-server",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: true,
     },
     LspServer {
         id: "vue",
         extensions: &[".vue"],
-        install: Npm {
-            package: "@vue/language-server",
-            binary: "vue-language-server",
-        },
+        binary: "vue-language-server",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: true,
     },
     LspServer {
         id: "astro",
         extensions: &[".astro"],
-        install: Npm {
-            package: "@astrojs/language-server",
-            binary: "astro-ls",
-        },
+        binary: "astro-ls",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: true,
     },
     LspServer {
         id: "css-ls",
         extensions: &[".css", ".scss", ".less"],
-        install: Npm {
-            package: "vscode-css-languageserver",
-            binary: "css-languageserver",
-        },
+        binary: "css-languageserver",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "html-ls",
         extensions: &[".html", ".htm"],
-        install: Npm {
-            package: "vscode-html-languageserver",
-            binary: "html-languageserver",
-        },
+        binary: "html-languageserver",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "zls",
         extensions: &[".zig", ".zon"],
-        install: GitHubRelease {
-            repo: "zigtools/zls",
-            name: "zls",
-        },
+        binary: "zls",
         args: &[],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "elixir-ls",
         extensions: &[".ex", ".exs"],
-        install: GitHubRelease {
-            repo: "elixir-lsp/elixir-ls",
-            name: "elixir-ls",
-        },
+        binary: "elixir-ls",
         args: &[],
-        env: &[],
         needs_lockfile: false,
     },
     LspServer {
         id: "php",
         extensions: &[".php"],
-        install: Npm {
-            package: "intelephense",
-            binary: "intelephense",
-        },
+        binary: "intelephense",
         args: &["--stdio"],
-        env: &[],
         needs_lockfile: false,
     },
 ];
 
-/// Find LSP servers that match a file extension
 pub fn for_extension(ext: &str) -> Vec<&'static LspServer> {
     SERVERS
         .iter()
@@ -227,21 +151,17 @@ pub fn for_extension(ext: &str) -> Vec<&'static LspServer> {
         .collect()
 }
 
-/// Map file extension to language
 pub fn language_for_ext(ext: &str) -> &'static str {
     match ext {
         ".rs" => "rust",
         ".go" => "go",
         ".py" | ".pyi" => "python",
-        ".ts" => "typescript",
-        ".tsx" => "typescriptreact",
-        ".js" => "javascript",
-        ".jsx" => "javascriptreact",
+        ".ts" | ".tsx" => "typescript",
+        ".js" | ".jsx" => "javascript",
         ".mjs" | ".cjs" => "javascript",
         ".mts" | ".cts" => "typescript",
         ".json" | ".jsonc" => "json",
         ".yaml" | ".yml" => "yaml",
-        ".md" | ".markdown" => "markdown",
         ".css" => "css",
         ".scss" => "scss",
         ".less" => "less",
