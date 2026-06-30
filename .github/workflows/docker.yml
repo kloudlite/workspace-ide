@@ -18,7 +18,9 @@ jobs:
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
+          cat > ~/.ssh/id_ed25519 << 'EOF'
+${{ secrets.SSH_KEY }}
+EOF
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H kmac.khost.dev >> ~/.ssh/known_hosts
 
