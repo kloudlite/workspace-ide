@@ -21,28 +21,20 @@ jobs:
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
 
-      - name: Configure SSH
+      - name: Test SSH connection
         run: |
-          echo "Host kmac.khost.dev" >> ~/.ssh/config
-          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
-          echo "  UserKnownHostsFile /dev/null" >> ~/.ssh/config
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 karthik@kmac.khost.dev "echo connected"
 
-      - name: Test SSH
-        run: ssh karthik@kmac.khost.dev "echo connected"
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-
-      - name: Set up Dagger
-        uses: dagger/dagger-for-github@v7
-        with:
-          version: "latest"
-
-      - name: Build and publish on kmac
+      - name: Build and push on kmac
         run: |
           TAG="${{ github.ref_name == 'master' && 'latest' || github.ref_name }}"
-          DOCKER_HOST=ssh://karthik@kmac.khost.dev dagger call publish \
-            --address ghcr.io/kloudlite/workspace-ide:$TAG
-        env:
-          DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+          IMAGE=ghcr.io/kloudlite/workspace-ide
+          tar czf - --exclude target --exclude .git . | \
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null karthik@kmac.khost.dev "
+            rm -rf /tmp/ws-build && mkdir -p /tmp/ws-build && cd /tmp/ws-build && tar xzf - && \
+            docker run --rm -v /tmp/ws-build:/src -w /src rust:latest cargo build --release && \
+            docker build -t ws:temp -f Dockerfile . && \
+            docker tag ws:temp $IMAGE:$TAG && \
+            docker push $IMAGE:$TAG
+          "
