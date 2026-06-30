@@ -81,18 +81,18 @@ enum Command {
     /// Run a git command on the server
     #[command(trailing_var_arg = true)]
     Git { args: Vec<String> },
-    /// Nix package management
-    Nix {
+    /// Package management (Nix-based)
+    Pkg {
         #[command(subcommand)]
-        action: NixAction,
+        action: PkgAction,
     },
 }
 
 #[derive(clap::Subcommand)]
-enum NixAction {
-    /// Install a package from nixpkgs
+enum PkgAction {
+    /// Install a package (e.g. "go", "go@1.21", "nodejs@18")
     Install { package: String },
-    /// Search nixpkgs
+    /// Search for packages
     Search { query: String },
     /// List installed packages
     List,
@@ -118,14 +118,14 @@ async fn main() {
         Command::Mcp => {
             mcp::run().await;
         }
-        Command::Nix { action } => {
+        Command::Pkg { action } => {
             let result = match action {
-                NixAction::Install { package } => nix::install(&package),
-                NixAction::Search { query } => nix::search(&query).map(|r| r.join("\n")),
-                NixAction::List => nix::list().map(|r| r.join("\n")),
-                NixAction::Remove { package } => nix::remove(&package),
-                NixAction::Apply => nix::apply_yaml(),
-                NixAction::Sync => nix::sync(),
+                PkgAction::Install { package } => nix::install(&package),
+                PkgAction::Search { query } => nix::search(&query).map(|r| r.join("\n")),
+                PkgAction::List => nix::list().map(|r| r.join("\n")),
+                PkgAction::Remove { package } => nix::remove(&package),
+                PkgAction::Apply => nix::apply_yaml(),
+                PkgAction::Sync => nix::sync(),
             };
             match result {
                 Ok(out) => println!("{}", out),
@@ -251,7 +251,7 @@ fn build_request(cmd: &Command) -> (&'static str, serde_json::Value) {
             ("lsp/completion", json!({ "path": path, "line": line, "character": character }))
         }
         Command::Git { args } => ("bash", json!({ "command": format!("git {}", args.join(" ")) })),
-        Command::Nix { .. }
+        Command::Pkg { .. }
         | Command::LspSessions
         | Command::Sessions
         | Command::Serve { .. }

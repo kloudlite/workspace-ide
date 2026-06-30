@@ -57,13 +57,15 @@ ws lsp-completion <path> <l> <c>  # Code completion
 ws lsp-sessions                   # List active LSP sessions
 ```
 
-### Nix Packages
+### Packages
 
 ```bash
-ws nix install <pkg>              # Install from nixpkgs
-ws nix search <query>             # Search nixpkgs
-ws nix list                       # List installed packages
-ws nix remove <pkg>               # Remove a package
+ws pkg install <pkg>[@version]    # Install (e.g. go, go@1.21, nodejs@18)
+ws pkg search <query>             # Search for packages
+ws pkg list                       # List installed packages
+ws pkg remove <pkg>               # Remove a package
+ws pkg apply                      # Install packages from ws.yaml
+ws pkg sync                       # Sync ws.yaml + ws.lock from current state
 ```
 
 ### MCP
@@ -122,7 +124,7 @@ This keeps the shell free for other commands. Check `ws sessions` periodically t
 If a language/tool isn't available, install it first via nix before trying to use it:
 
 ```bash
-ws nix install go                 # Install Go compiler
+ws pkg install go                 # Install Go compiler
 ws bash "go version"              # Verify it works
 ws lsp-diagnose main.go           # LSP uses the installed tool
 ```
@@ -215,7 +217,7 @@ ws logs <session_id>
 
 ```bash
 # 1. Install required toolchain
-ws nix install go nodejs rust-analyzer
+ws pkg install go nodejs rust-analyzer
 
 # 2. Initialize project
 ws bash "go mod init myproject"
