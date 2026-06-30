@@ -156,7 +156,17 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
 
 // --- Server lifecycle ---
 
-async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, ChildStdin, Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>), String> {
+async fn start_server(
+    svr: &server::LspServer,
+    root: &str,
+) -> Result<
+    (
+        Child,
+        ChildStdin,
+        Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
+    ),
+    String,
+> {
     let bin_path = download::ensure(&svr.install)?;
 
     let mut cmd = Command::new(&bin_path);
@@ -415,7 +425,10 @@ async fn send_request(
             if let Some(error) = resp.get("error") {
                 Err(format!("LSP error: {:?}", error))
             } else {
-                Ok(resp.get("result").cloned().unwrap_or(serde_json::Value::Null))
+                Ok(resp
+                    .get("result")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null))
             }
         }
         Ok(Err(_)) => Err("response channel closed".into()),
@@ -431,17 +444,21 @@ fn rand_id() -> u64 {
         .as_nanos() as u64
 }
 
-fn get_session_for(
-    sid: &str,
-    root: &str,
-) -> Option<Session> {
+fn get_session_for(sid: &str, root: &str) -> Option<Session> {
     let s = state().lock().unwrap();
-    s.sessions.iter().find(|sess| sess.server_id == sid && sess.root == root).cloned()
+    s.sessions
+        .iter()
+        .find(|sess| sess.server_id == sid && sess.root == root)
+        .cloned()
 }
 
 fn update_session_active(sid: &str, root: &str) {
     if let Ok(mut s) = state().lock() {
-        if let Some(sess) = s.sessions.iter_mut().find(|s| s.server_id == sid && s.root == root) {
+        if let Some(sess) = s
+            .sessions
+            .iter_mut()
+            .find(|s| s.server_id == sid && s.root == root)
+        {
             sess.last_active = Instant::now();
         }
     }
@@ -449,7 +466,10 @@ fn update_session_active(sid: &str, root: &str) {
 
 async fn ensure_file_open(session: &Session, path: &str) {
     let content = tokio::fs::read_to_string(path).await.unwrap_or_default();
-    let ext = Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("");
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
     let language_id = server::language_for_ext(&format!(".{}", ext));
     let mut owned = session.stdin.lock().unwrap().take();
     if let Some(ref mut stdin) = owned {
@@ -462,9 +482,7 @@ macro_rules! lsp_request {
     ($session:expr, $method:expr, $path:expr, $params:expr) => {{
         let mut owned = $session.stdin.lock().unwrap().take();
         let result = match owned {
-            Some(ref mut stdin) => {
-                send_request(stdin, &$session.pending, $method, $params).await
-            }
+            Some(ref mut stdin) => send_request(stdin, &$session.pending, $method, $params).await,
             None => Err("no stdin available".into()),
         };
         *$session.stdin.lock().unwrap() = owned;
@@ -472,7 +490,11 @@ macro_rules! lsp_request {
     }};
 }
 
-pub async fn hover(file_path: &str, line: usize, character: usize) -> Result<serde_json::Value, String> {
+pub async fn hover(
+    file_path: &str,
+    line: usize,
+    character: usize,
+) -> Result<serde_json::Value, String> {
     let (session, uri) = resolve_session(file_path).await?;
     ensure_file_open(&session, file_path).await;
     let params = serde_json::json!({
@@ -482,7 +504,11 @@ pub async fn hover(file_path: &str, line: usize, character: usize) -> Result<ser
     lsp_request!(session, "textDocument/hover", file_path, params)
 }
 
-pub async fn definition(file_path: &str, line: usize, character: usize) -> Result<serde_json::Value, String> {
+pub async fn definition(
+    file_path: &str,
+    line: usize,
+    character: usize,
+) -> Result<serde_json::Value, String> {
     let (session, uri) = resolve_session(file_path).await?;
     ensure_file_open(&session, file_path).await;
     let params = serde_json::json!({
@@ -492,7 +518,11 @@ pub async fn definition(file_path: &str, line: usize, character: usize) -> Resul
     lsp_request!(session, "textDocument/definition", file_path, params)
 }
 
-pub async fn references(file_path: &str, line: usize, character: usize) -> Result<serde_json::Value, String> {
+pub async fn references(
+    file_path: &str,
+    line: usize,
+    character: usize,
+) -> Result<serde_json::Value, String> {
     let (session, uri) = resolve_session(file_path).await?;
     ensure_file_open(&session, file_path).await;
     let params = serde_json::json!({
@@ -503,7 +533,11 @@ pub async fn references(file_path: &str, line: usize, character: usize) -> Resul
     lsp_request!(session, "textDocument/references", file_path, params)
 }
 
-pub async fn completion(file_path: &str, line: usize, character: usize) -> Result<serde_json::Value, String> {
+pub async fn completion(
+    file_path: &str,
+    line: usize,
+    character: usize,
+) -> Result<serde_json::Value, String> {
     let (session, uri) = resolve_session(file_path).await?;
     ensure_file_open(&session, file_path).await;
     let params = serde_json::json!({
@@ -514,7 +548,8 @@ pub async fn completion(file_path: &str, line: usize, character: usize) -> Resul
 }
 
 async fn resolve_session(file_path: &str) -> Result<(Session, String), String> {
-    let ext = Path::new(file_path).extension()
+    let ext = Path::new(file_path)
+        .extension()
         .and_then(|e| e.to_str())
         .map(|e| format!(".{}", e))
         .unwrap_or_default();
