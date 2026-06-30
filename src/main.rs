@@ -78,6 +78,8 @@ enum Command {
     LspReferences { path: String, line: usize, character: usize },
     /// LSP code completion at a position
     LspCompletion { path: String, line: usize, character: usize },
+    /// Run a git command on the server
+    Git { args: Vec<String> },
     /// Nix package management
     Nix {
         #[command(subcommand)]
@@ -241,6 +243,7 @@ fn build_request(cmd: &Command) -> (&'static str, serde_json::Value) {
         Command::LspCompletion { path, line, character } => {
             ("lsp/completion", json!({ "path": path, "line": line, "character": character }))
         }
+        Command::Git { args } => ("bash", json!({ "command": format!("git {}", args.join(" ")) })),
         Command::Nix { .. }
         | Command::LspSessions
         | Command::Sessions
