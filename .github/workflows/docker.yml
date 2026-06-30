@@ -18,7 +18,7 @@ jobs:
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
-          cat > ~/.ssh/id_ed25519 << 'EOF'
+          cat > ~/.ssh/id_ed25519 << EOF
 ${{ secrets.SSH_KEY }}
 EOF
           chmod 600 ~/.ssh/id_ed25519
