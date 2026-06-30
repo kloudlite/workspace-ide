@@ -1,4 +1,4 @@
-use crate::tools;
+use crate::{lsp, tools};
 use axum::{
     http::StatusCode,
     routing::{get, post},
@@ -30,6 +30,8 @@ pub fn router() -> Router {
         .route("/status", post(status_handler))
         .route("/kill", post(kill_handler))
         .route("/sessions", get(sessions_handler))
+        .route("/lsp/diagnose", post(lsp_diagnose_handler))
+        .route("/lsp/sessions", get(lsp_sessions_handler))
 }
 
 #[derive(Serialize)]
@@ -163,4 +165,20 @@ async fn kill_handler(
 
 async fn sessions_handler() -> Json<Vec<tools::StatusResult>> {
     Json(tools::list_sessions().await)
+}
+
+// --- LSP handlers ---
+
+async fn lsp_diagnose_handler(
+    Json(req): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    let path = get_str(&req, "path")?;
+    match lsp::diagnose_file(path).await {
+        Ok(diags) => Ok(Json(serde_json::to_value(diags).unwrap_or_default())),
+        Err(e) => Err(err(StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+async fn lsp_sessions_handler() -> Json<Value> {
+    Json(serde_json::json!(lsp::list_sessions()))
 }
