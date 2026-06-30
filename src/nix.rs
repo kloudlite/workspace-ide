@@ -28,7 +28,11 @@ fn nix_cmd() -> Result<Command, String> {
 
 fn find_nix() -> Option<String> {
     let paths = [NIX_BIN, "/usr/bin/nix", "/usr/local/bin/nix"];
-    for p in &paths { if Path::new(p).exists() { return Some(p.to_string()); } }
+    for p in &paths {
+        if Path::new(p).exists() {
+            return Some(p.to_string());
+        }
+    }
     None
 }
 
@@ -46,7 +50,9 @@ pub fn install(input: &str) -> Result<String, String> {
 fn install_one(flake: &str, pkg: &str) -> Result<String, String> {
     let attr = format!("{}#{}", flake, pkg);
     eprintln!("ws: nix installing {}...", attr);
-    let output = nix_cmd()?.args(["profile", "install", &attr]).output()
+    let output = nix_cmd()?
+        .args(["profile", "install", &attr])
+        .output()
         .map_err(|e| format!("nix install: {}", e))?;
     if output.status.success() {
         eprintln!("ws: package {} installed", pkg);
@@ -67,7 +73,9 @@ fn install_version(name: &str, version: &str) -> Result<String, String> {
     ];
     for attr in &candidates {
         eprintln!("ws: trying {}...", attr);
-        let output = nix_cmd()?.args(["profile", "install", attr]).output()
+        let output = nix_cmd()?
+            .args(["profile", "install", attr])
+            .output()
             .map_err(|e| format!("nix install: {}", e))?;
         if output.status.success() {
             eprintln!("ws: package {}@{} installed", name, version);
@@ -79,7 +87,9 @@ fn install_version(name: &str, version: &str) -> Result<String, String> {
 }
 
 pub fn remove(package: &str) -> Result<String, String> {
-    let output = nix_cmd()?.args(["profile", "remove", package]).output()
+    let output = nix_cmd()?
+        .args(["profile", "remove", package])
+        .output()
         .map_err(|e| format!("nix remove: {}", e))?;
     if output.status.success() {
         let _ = write_workspace_files();
@@ -110,20 +120,36 @@ fn search_api(query: &str) -> Result<Vec<String>, String> {
     );
     let resp = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
-        .build().map_err(|e| format!("client: {}", e))?
-        .get(&url).send().map_err(|e| format!("req: {}", e))?;
+        .build()
+        .map_err(|e| format!("client: {}", e))?
+        .get(&url)
+        .send()
+        .map_err(|e| format!("req: {}", e))?;
     let body: serde_json::Value = resp.json().map_err(|e| format!("parse: {}", e))?;
     let mut results = Vec::new();
-    if let Some(hits) = body.get("hits").and_then(|h| h.get("hits")).and_then(|a| a.as_array()) {
+    if let Some(hits) = body
+        .get("hits")
+        .and_then(|h| h.get("hits"))
+        .and_then(|a| a.as_array())
+    {
         for hit in hits {
             let src = hit.get("_source").or_else(|| hit.get("source"));
             if let Some(s) = src {
-                let name = s.get("package_name").or(s.get("packagePkgname"))
-                    .and_then(|v| v.as_str()).unwrap_or("?");
-                let ver = s.get("package_version").or(s.get("version"))
-                    .and_then(|v| v.as_str()).unwrap_or("?");
-                let desc = s.get("package_description").or(s.get("description"))
-                    .and_then(|v| v.as_str()).unwrap_or("");
+                let name = s
+                    .get("package_name")
+                    .or(s.get("packagePkgname"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?");
+                let ver = s
+                    .get("package_version")
+                    .or(s.get("version"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?");
+                let desc = s
+                    .get("package_description")
+                    .or(s.get("description"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let d = if desc.len() > 80 { &desc[..80] } else { desc };
                 results.push(format!("{}  {}  {}", name, ver, d));
             }
@@ -133,9 +159,14 @@ fn search_api(query: &str) -> Result<Vec<String>, String> {
 }
 
 fn search_cli(query: &str) -> Result<Vec<String>, String> {
-    let output = nix_cmd()?.args(["search", "nixpkgs", query]).output()
+    let output = nix_cmd()?
+        .args(["search", "nixpkgs", query])
+        .output()
         .map_err(|e| format!("nix search: {}", e))?;
-    Ok(String::from_utf8_lossy(&output.stdout).lines().map(|l| l.to_string()).collect())
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|l| l.to_string())
+        .collect())
 }
 
 fn urlencoding(s: &str) -> String {
@@ -151,8 +182,12 @@ fn get_installed() -> Result<HashMap<String, String>, String> {
     let mut map = HashMap::new();
     if let Some(elements) = val.get("elements").and_then(|e| e.as_object()) {
         for (name, info) in elements {
-            let store = info.get("storePaths").and_then(|p| p.as_array())
-                .and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("");
+            let store = info
+                .get("storePaths")
+                .and_then(|p| p.as_array())
+                .and_then(|a| a.first())
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             map.insert(name.clone(), store.to_string());
         }
     }
@@ -160,7 +195,9 @@ fn get_installed() -> Result<HashMap<String, String>, String> {
 }
 
 fn get_profile_json() -> Result<serde_json::Value, String> {
-    let output = nix_cmd()?.args(["profile", "list", "--json"]).output()
+    let output = nix_cmd()?
+        .args(["profile", "list", "--json"])
+        .output()
         .map_err(|e| format!("nix list: {}", e))?;
     serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
         .map_err(|e| format!("parse: {}", e))
@@ -169,7 +206,9 @@ fn get_profile_json() -> Result<serde_json::Value, String> {
 fn extract_version(store_path: &str) -> String {
     let name = store_path.rsplit('/').next().unwrap_or("");
     let parts: Vec<&str> = name.splitn(2, '-').collect();
-    if parts.len() < 2 { return "".into(); }
+    if parts.len() < 2 {
+        return "".into();
+    }
     let rest = parts[1];
     let dash = rest.find('-').unwrap_or(rest.len());
     rest[dash + 1..].to_string()
@@ -181,7 +220,9 @@ fn resolve_flake() -> String {
             let t = line.trim();
             if let Some(rev) = t.strip_prefix("nixpkgs_revision: \"") {
                 if let Some(rev) = rev.strip_suffix("\"") {
-                    if !rev.is_empty() { return format!("github:NixOS/nixpkgs/{}", rev); }
+                    if !rev.is_empty() {
+                        return format!("github:NixOS/nixpkgs/{}", rev);
+                    }
                 }
             }
         }
@@ -190,13 +231,15 @@ fn resolve_flake() -> String {
 }
 
 pub fn apply_yaml() -> Result<String, String> {
-    let content = std::fs::read_to_string("ws.yaml")
-        .map_err(|e| format!("cannot read ws.yaml: {}", e))?;
+    let content =
+        std::fs::read_to_string("ws.yaml").map_err(|e| format!("cannot read ws.yaml: {}", e))?;
     let mut desired = Vec::new();
     for line in content.lines() {
         let t = line.trim();
         if let Some(name) = t.strip_prefix("- ") {
-            if !name.is_empty() { desired.push(name.to_string()); }
+            if !name.is_empty() {
+                desired.push(name.to_string());
+            }
         }
     }
     let current = list().unwrap_or_default();
@@ -211,8 +254,11 @@ pub fn apply_yaml() -> Result<String, String> {
             }
         }
     }
-    if installed.is_empty() { Ok("all packages already installed".into()) }
-    else { Ok(format!("installed:\n{}", installed.join("\n"))) }
+    if installed.is_empty() {
+        Ok("all packages already installed".into())
+    } else {
+        Ok(format!("installed:\n{}", installed.join("\n")))
+    }
 }
 
 fn write_workspace_files() -> Result<(), String> {
@@ -221,10 +267,15 @@ fn write_workspace_files() -> Result<(), String> {
     let mut lock_pkgs = Vec::new();
     let mut yaml_pkgs = Vec::new();
     for (name, store_path) in &pkgs {
-        if name == "nix" || name == "nix-manual" || name == "nss-cacert" { continue; }
+        if name == "nix" || name == "nix-manual" || name == "nss-cacert" {
+            continue;
+        }
         let version = extract_version(store_path);
         yaml_pkgs.push(format!("  - {}", name));
-        lock_pkgs.push(format!("  {}:\n      version: \"{}\"\n      store: \"{}\"", name, version, store_path));
+        lock_pkgs.push(format!(
+            "  {}:\n      version: \"{}\"\n      store: \"{}\"",
+            name, version, store_path
+        ));
     }
     yaml.push_str("# ws packages — managed by 'ws nix'\npackages:\n");
     yaml.push_str(&yaml_pkgs.join("\n"));
@@ -244,7 +295,9 @@ fn write_workspace_files() -> Result<(), String> {
 }
 
 fn get_nixpkgs_revision() -> Result<String, String> {
-    let output = nix_cmd()?.args(["flake", "metadata", "nixpkgs", "--json"]).output()
+    let output = nix_cmd()?
+        .args(["flake", "metadata", "nixpkgs", "--json"])
+        .output()
         .map_err(|e| format!("nix flake metadata: {}", e))?;
     let val: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
         .map_err(|e| format!("parse: {}", e))?;
