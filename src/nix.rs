@@ -1,5 +1,5 @@
 /// Nix package manager — host daemon, shared store, per-HOME profiles
-/// Supports ws.yaml + ws.lock for reproducible workspaces
+/// Supports ws.yaml + ws.lock for reproducible workspaces, package@version syntax
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -8,7 +8,6 @@ use std::process::Command;
 const NIX_BIN: &str = "/nix/var/nix/profiles/default/bin/nix";
 const NIX_PROFILE_BIN: &str = "/nix/var/nix/profiles/default/bin";
 
-/// Add nix binaries to PATH at startup
 pub fn setup_env() {
     if let Ok(current) = std::env::var("PATH") {
         if !current.contains(NIX_PROFILE_BIN) {
@@ -29,25 +28,28 @@ fn nix_cmd() -> Result<Command, String> {
 
 fn find_nix() -> Option<String> {
     let paths = [NIX_BIN, "/usr/bin/nix", "/usr/local/bin/nix"];
-    for p in &paths {
-        if Path::new(p).exists() {
-            return Some(p.to_string());
-        }
-    }
+    for p in &paths { if Path::new(p).exists() { return Some(p.to_string()); } }
     None
 }
 
-/// Install a package, pinning to locked nixpkgs revision if ws.lock exists
-pub fn install(package: &str) -> Result<String, String> {
-    let flake = resolve_flake();
-    let attr = format!("{}#{}", flake, package);
-    eprintln!("ws: nix installing {} from {}...", package, flake);
-    let output = nix_cmd()?
-        .args(["profile", "install", &attr])
-        .output()
+/// Install a package. Supports `pkg@version` (e.g. go@1.21, nodejs@18).
+/// Pins nixpkgs revision from ws.lock if available.
+pub fn install(input: &str) -> Result<String, String> {
+    let (name, version) = input.split_once('@').unwrap_or((input, ""));
+    if version.is_empty() {
+        install_one(&resolve_flake(), name)
+    } else {
+        install_version(name, version)
+    }
+}
+
+fn install_one(flake: &str, pkg: &str) -> Result<String, String> {
+    let attr = format!("{}#{}", flake, pkg);
+    eprintln!("ws: nix installing {}...", attr);
+    let output = nix_cmd()?.args(["profile", "install", &attr]).output()
         .map_err(|e| format!("nix install: {}", e))?;
     if output.status.success() {
-        eprintln!("ws: package {} installed", package);
+        eprintln!("ws: package {} installed", pkg);
         let _ = write_workspace_files();
         Ok("done".into())
     } else {
@@ -55,34 +57,29 @@ pub fn install(package: &str) -> Result<String, String> {
     }
 }
 
-/// Resolve the nixpkgs flake URL — use pinned revision from ws.lock if available
-fn resolve_flake() -> String {
-    if let Ok(content) = std::fs::read_to_string("ws.lock") {
-        for line in content.lines() {
-            let t = line.trim();
-            if let Some(rev) = t.strip_prefix("nixpkgs_revision: \"") {
-                if let Some(rev) = rev.strip_suffix("\"") {
-                    if !rev.is_empty() {
-                        return format!("github:NixOS/nixpkgs/{}", rev);
-                    }
-                }
-            }
+fn install_version(name: &str, version: &str) -> Result<String, String> {
+    let flake = resolve_flake();
+    // Try candidates: pkg@version, pkg_version, pkg_version_no_dots
+    let candidates = vec![
+        format!("{}#{}@{}", flake, name, version),
+        format!("{}#{}_{}", flake, name, version.replace('.', "_")),
+        format!("{}#{}_{}", flake, name, version.replace('.', "")),
+    ];
+    for attr in &candidates {
+        eprintln!("ws: trying {}...", attr);
+        let output = nix_cmd()?.args(["profile", "install", attr]).output()
+            .map_err(|e| format!("nix install: {}", e))?;
+        if output.status.success() {
+            eprintln!("ws: package {}@{} installed", name, version);
+            let _ = write_workspace_files();
+            return Ok("done".into());
         }
     }
-    "nixpkgs".to_string()
-}
-
-/// Remove a package and update ws.yaml + ws.lock
-/// Sync ws.yaml + ws.lock from current installed state
-pub fn sync() -> Result<String, String> {
-    write_workspace_files()?;
-    Ok("ws.yaml + ws.lock updated".into())
+    Err(format!("no version {}@{} found in nixpkgs", name, version))
 }
 
 pub fn remove(package: &str) -> Result<String, String> {
-    let output = nix_cmd()?
-        .args(["profile", "remove", package])
-        .output()
+    let output = nix_cmd()?.args(["profile", "remove", package]).output()
         .map_err(|e| format!("nix remove: {}", e))?;
     if output.status.success() {
         let _ = write_workspace_files();
@@ -92,20 +89,21 @@ pub fn remove(package: &str) -> Result<String, String> {
     }
 }
 
+pub fn sync() -> Result<String, String> {
+    write_workspace_files()?;
+    Ok("ws.yaml + ws.lock updated".into())
+}
+
 pub fn search(query: &str) -> Result<Vec<String>, String> {
-    let output = nix_cmd()?
-        .args(["search", "nixpkgs", query])
-        .output()
+    let output = nix_cmd()?.args(["search", "nixpkgs", query]).output()
         .map_err(|e| format!("nix search: {}", e))?;
     Ok(String::from_utf8_lossy(&output.stdout).lines().map(|l| l.to_string()).collect())
 }
 
-/// List installed packages (names only)
 pub fn list() -> Result<Vec<String>, String> {
     get_installed().map(|m| m.into_keys().collect())
 }
 
-/// Detailed list with package info (name, version, store path)
 #[derive(serde::Serialize)]
 pub struct PkgInfo {
     pub name: String,
@@ -114,69 +112,64 @@ pub struct PkgInfo {
 }
 
 pub fn list_detailed() -> Result<Vec<PkgInfo>, String> {
-    let output = nix_cmd()?
-        .args(["profile", "list", "--json"])
-        .output()
+    let output = nix_cmd()?.args(["profile", "list", "--json"]).output()
         .map_err(|e| format!("nix list: {}", e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    match serde_json::from_str::<serde_json::Value>(&stdout) {
-        Ok(val) => {
-            let elements = val.get("elements").and_then(|e| e.as_object()).ok_or("bad format")?;
-            let mut result = Vec::new();
-            for (name, info) in elements {
-                let store_path = info.get("storePaths")
-                    .and_then(|p| p.as_array())
-                    .and_then(|a| a.first())
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let version = extract_version(&store_path);
-                result.push(PkgInfo { name: name.clone(), version, store_path });
-            }
-            Ok(result)
+    let val: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+        .map_err(|e| format!("parse: {}", e))?;
+    let mut result = Vec::new();
+    if let Some(elements) = val.get("elements").and_then(|e| e.as_object()) {
+        for (name, info) in elements {
+            let store = info.get("storePaths").and_then(|p| p.as_array())
+                .and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("");
+            result.push(PkgInfo { name: name.clone(), version: extract_version(store), store_path: store.to_string() });
         }
-        Err(e) => Err(format!("parse error: {}", e)),
     }
+    Ok(result)
 }
 
 fn get_installed() -> Result<HashMap<String, String>, String> {
-    let output = nix_cmd()?
-        .args(["profile", "list", "--json"])
-        .output()
-        .map_err(|e| format!("nix list: {}", e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    match serde_json::from_str::<serde_json::Value>(&stdout) {
-        Ok(val) => {
-            let mut map = HashMap::new();
-            if let Some(elements) = val.get("elements").and_then(|e| e.as_object()) {
-                for (name, info) in elements {
-                    let store = info.get("storePaths")
-                        .and_then(|p| p.as_array())
-                        .and_then(|a| a.first())
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    map.insert(name.clone(), store.to_string());
-                }
-            }
-            Ok(map)
+    let val = get_profile_json()?;
+    let mut map = HashMap::new();
+    if let Some(elements) = val.get("elements").and_then(|e| e.as_object()) {
+        for (name, info) in elements {
+            let store = info.get("storePaths").and_then(|p| p.as_array())
+                .and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("");
+            map.insert(name.clone(), store.to_string());
         }
-        Err(_) => Ok(HashMap::new()),
     }
+    Ok(map)
 }
 
-/// Extract version from a Nix store path like /nix/store/hash-go-1.26.4
+fn get_profile_json() -> Result<serde_json::Value, String> {
+    let output = nix_cmd()?.args(["profile", "list", "--json"]).output()
+        .map_err(|e| format!("nix list: {}", e))?;
+    serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+        .map_err(|e| format!("parse: {}", e))
+}
+
 fn extract_version(store_path: &str) -> String {
     let name = store_path.rsplit('/').next().unwrap_or("");
-    // Format: hash-name-version  e.g. "gb0njhqswlc5n127ikgyikvq39r40l6f-go-1.26.4"
     let parts: Vec<&str> = name.splitn(2, '-').collect();
     if parts.len() < 2 { return "".into(); }
-    let rest = parts[1]; // "go-1.26.4"
+    let rest = parts[1];
     let dash = rest.find('-').unwrap_or(rest.len());
-    let version = &rest[dash + 1..];
-    version.to_string()
+    rest[dash + 1..].to_string()
 }
 
-/// Read ws.yaml and install missing packages
+fn resolve_flake() -> String {
+    if let Ok(content) = std::fs::read_to_string("ws.lock") {
+        for line in content.lines() {
+            let t = line.trim();
+            if let Some(rev) = t.strip_prefix("nixpkgs_revision: \"") {
+                if let Some(rev) = rev.strip_suffix("\"") {
+                    if !rev.is_empty() { return format!("github:NixOS/nixpkgs/{}", rev); }
+                }
+            }
+        }
+    }
+    "nixpkgs".to_string()
+}
+
 pub fn apply_yaml() -> Result<String, String> {
     let content = std::fs::read_to_string("ws.yaml")
         .map_err(|e| format!("cannot read ws.yaml: {}", e))?;
@@ -203,20 +196,17 @@ pub fn apply_yaml() -> Result<String, String> {
     else { Ok(format!("installed:\n{}", installed.join("\n"))) }
 }
 
-/// Write ws.yaml (user manifest) and ws.lock (revision pin)
 fn write_workspace_files() -> Result<(), String> {
     let pkgs = get_installed()?;
     let mut yaml = String::new();
     let mut lock_pkgs = Vec::new();
     let mut yaml_pkgs = Vec::new();
-
     for (name, store_path) in &pkgs {
         if name == "nix" || name == "nix-manual" || name == "nss-cacert" { continue; }
         let version = extract_version(store_path);
         yaml_pkgs.push(format!("  - {}", name));
         lock_pkgs.push(format!("  {}:\n      version: \"{}\"\n      store: \"{}\"", name, version, store_path));
     }
-
     yaml.push_str("# ws packages — managed by 'ws nix'\npackages:\n");
     yaml.push_str(&yaml_pkgs.join("\n"));
     yaml.push('\n');
@@ -231,25 +221,18 @@ fn write_workspace_files() -> Result<(), String> {
     lock.push_str(&lock_pkgs.join("\n"));
     lock.push('\n');
     std::fs::write("ws.lock", &lock).map_err(|e| format!("write ws.lock: {}", e))?;
-
     Ok(())
 }
 
-/// Get the pinned nixpkgs revision from an installed package's flake URL
 fn get_nixpkgs_revision() -> Result<String, String> {
-    // Use `nix flake metadata` to get the exact locked revision
-    let output = nix_cmd()?
-        .args(["flake", "metadata", "nixpkgs", "--json"])
-        .output()
+    let output = nix_cmd()?.args(["flake", "metadata", "nixpkgs", "--json"]).output()
         .map_err(|e| format!("nix flake metadata: {}", e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let val: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|e| format!("parse flake metadata: {}", e))?;
-    // The JSON has fields: url, locked, original, etc.
+    let val: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+        .map_err(|e| format!("parse: {}", e))?;
     if let Some(locked) = val.get("locked") {
         if let Some(rev) = locked.get("rev").and_then(|v| v.as_str()) {
             return Ok(rev.to_string());
         }
     }
-    Err("no locked revision found".into())
+    Err("revision not found".into())
 }
