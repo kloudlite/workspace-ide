@@ -1,5 +1,5 @@
-/// Nix package manager — host daemon, shared store, per-HOME profiles
-/// Supports ws.yaml + ws.lock for reproducible workspaces, package@version syntax
+//! Nix package manager — host daemon, shared store, per-HOME profiles
+//! Supports ws.yaml + ws.lock for reproducible workspaces, package@version syntax
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -142,44 +142,8 @@ fn urlencoding(s: &str) -> String {
     s.replace(' ', "%20")
 }
 
-fn resolve_flake_revision() -> Option<String> {
-    let content = std::fs::read_to_string("ws.lock").ok()?;
-    for line in content.lines() {
-        let t = line.trim();
-        if let Some(rev) = t.strip_prefix("nixpkgs_revision: \"") {
-            if let Some(rev) = rev.strip_suffix("\"") {
-                if !rev.is_empty() { return Some(rev.to_string()); }
-            }
-        }
-    }
-    None
-}
-
 pub fn list() -> Result<Vec<String>, String> {
     get_installed().map(|m| m.into_keys().collect())
-}
-
-#[derive(serde::Serialize)]
-pub struct PkgInfo {
-    pub name: String,
-    pub version: String,
-    pub store_path: String,
-}
-
-pub fn list_detailed() -> Result<Vec<PkgInfo>, String> {
-    let output = nix_cmd()?.args(["profile", "list", "--json"]).output()
-        .map_err(|e| format!("nix list: {}", e))?;
-    let val: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
-        .map_err(|e| format!("parse: {}", e))?;
-    let mut result = Vec::new();
-    if let Some(elements) = val.get("elements").and_then(|e| e.as_object()) {
-        for (name, info) in elements {
-            let store = info.get("storePaths").and_then(|p| p.as_array())
-                .and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("");
-            result.push(PkgInfo { name: name.clone(), version: extract_version(store), store_path: store.to_string() });
-        }
-    }
-    Ok(result)
 }
 
 fn get_installed() -> Result<HashMap<String, String>, String> {

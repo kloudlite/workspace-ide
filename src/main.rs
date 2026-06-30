@@ -71,13 +71,29 @@ enum Command {
     /// List running LSP sessions
     LspSessions,
     /// LSP hover at a position
-    LspHover { path: String, line: usize, character: usize },
+    LspHover {
+        path: String,
+        line: usize,
+        character: usize,
+    },
     /// LSP go to definition at a position
-    LspDefinition { path: String, line: usize, character: usize },
+    LspDefinition {
+        path: String,
+        line: usize,
+        character: usize,
+    },
     /// LSP find references at a position
-    LspReferences { path: String, line: usize, character: usize },
+    LspReferences {
+        path: String,
+        line: usize,
+        character: usize,
+    },
     /// LSP code completion at a position
-    LspCompletion { path: String, line: usize, character: usize },
+    LspCompletion {
+        path: String,
+        line: usize,
+        character: usize,
+    },
     /// Run a git command on the server
     #[command(trailing_var_arg = true)]
     Git { args: Vec<String> },
@@ -238,19 +254,42 @@ fn build_request(cmd: &Command) -> (&'static str, serde_json::Value) {
         Command::Status { session_id } => ("status", json!({ "session_id": session_id })),
         Command::Kill { session_id } => ("kill", json!({ "session_id": session_id })),
         Command::Diagnose { path } => ("lsp/diagnose", json!({ "path": path })),
-        Command::LspHover { path, line, character } => {
-            ("lsp/hover", json!({ "path": path, "line": line, "character": character }))
-        }
-        Command::LspDefinition { path, line, character } => {
-            ("lsp/definition", json!({ "path": path, "line": line, "character": character }))
-        }
-        Command::LspReferences { path, line, character } => {
-            ("lsp/references", json!({ "path": path, "line": line, "character": character }))
-        }
-        Command::LspCompletion { path, line, character } => {
-            ("lsp/completion", json!({ "path": path, "line": line, "character": character }))
-        }
-        Command::Git { args } => ("bash", json!({ "command": format!("git {}", args.join(" ")) })),
+        Command::LspHover {
+            path,
+            line,
+            character,
+        } => (
+            "lsp/hover",
+            json!({ "path": path, "line": line, "character": character }),
+        ),
+        Command::LspDefinition {
+            path,
+            line,
+            character,
+        } => (
+            "lsp/definition",
+            json!({ "path": path, "line": line, "character": character }),
+        ),
+        Command::LspReferences {
+            path,
+            line,
+            character,
+        } => (
+            "lsp/references",
+            json!({ "path": path, "line": line, "character": character }),
+        ),
+        Command::LspCompletion {
+            path,
+            line,
+            character,
+        } => (
+            "lsp/completion",
+            json!({ "path": path, "line": line, "character": character }),
+        ),
+        Command::Git { args } => (
+            "bash",
+            json!({ "command": format!("git {}", args.join(" ")) }),
+        ),
         Command::Pkg { .. }
         | Command::LspSessions
         | Command::Sessions

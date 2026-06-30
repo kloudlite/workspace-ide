@@ -187,26 +187,16 @@ async fn lsp_sessions_handler() -> Json<Value> {
     Json(serde_json::json!(lsp::list_sessions()))
 }
 
-fn get_pos(v: &Value) -> Result<(usize, usize), (StatusCode, Json<ErrorResponse>)> {
-    let path = get_str(v, "path")?;
-    let line = v.get("line").and_then(|v| v.as_u64()).ok_or_else(|| {
-        err(StatusCode::BAD_REQUEST, "missing line")
-    })? as usize;
-    let character = v.get("character").and_then(|v| v.as_u64()).ok_or_else(|| {
-        err(StatusCode::BAD_REQUEST, "missing character")
-    })? as usize;
-    // Return path via closure
-    Ok((line, character))
-}
-
 fn get_path_and_pos(v: &Value) -> Result<(&str, usize, usize), (StatusCode, Json<ErrorResponse>)> {
     let path = get_str(v, "path")?;
-    let line = v.get("line").and_then(|v| v.as_u64()).ok_or_else(|| {
-        err(StatusCode::BAD_REQUEST, "missing line")
-    })? as usize;
-    let character = v.get("character").and_then(|v| v.as_u64()).ok_or_else(|| {
-        err(StatusCode::BAD_REQUEST, "missing character")
-    })? as usize;
+    let line = v
+        .get("line")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| err(StatusCode::BAD_REQUEST, "missing line"))? as usize;
+    let character =
+        v.get("character")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| err(StatusCode::BAD_REQUEST, "missing character"))? as usize;
     Ok((path, line, character))
 }
 
@@ -214,7 +204,8 @@ async fn lsp_hover_handler(
     Json(req): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     let (path, line, character) = get_path_and_pos(&req)?;
-    lsp::hover(path, line, character).await
+    lsp::hover(path, line, character)
+        .await
         .map(Json)
         .map_err(|e| err(StatusCode::BAD_REQUEST, e))
 }
@@ -223,7 +214,8 @@ async fn lsp_definition_handler(
     Json(req): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     let (path, line, character) = get_path_and_pos(&req)?;
-    lsp::definition(path, line, character).await
+    lsp::definition(path, line, character)
+        .await
         .map(Json)
         .map_err(|e| err(StatusCode::BAD_REQUEST, e))
 }
@@ -232,7 +224,8 @@ async fn lsp_references_handler(
     Json(req): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     let (path, line, character) = get_path_and_pos(&req)?;
-    lsp::references(path, line, character).await
+    lsp::references(path, line, character)
+        .await
         .map(Json)
         .map_err(|e| err(StatusCode::BAD_REQUEST, e))
 }
@@ -241,7 +234,8 @@ async fn lsp_completion_handler(
     Json(req): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     let (path, line, character) = get_path_and_pos(&req)?;
-    lsp::completion(path, line, character).await
+    lsp::completion(path, line, character)
+        .await
         .map(Json)
         .map_err(|e| err(StatusCode::BAD_REQUEST, e))
 }
