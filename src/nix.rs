@@ -37,10 +37,11 @@ fn find_nix() -> Option<String> {
     None
 }
 
-/// Install a package and update ws.yaml + ws.lock
+/// Install a package, pinning to locked nixpkgs revision if ws.lock exists
 pub fn install(package: &str) -> Result<String, String> {
-    let attr = format!("nixpkgs#{}", package);
-    eprintln!("ws: nix installing {}...", package);
+    let flake = resolve_flake();
+    let attr = format!("{}#{}", flake, package);
+    eprintln!("ws: nix installing {} from {}...", package, flake);
     let output = nix_cmd()?
         .args(["profile", "install", &attr])
         .output()
@@ -52,6 +53,23 @@ pub fn install(package: &str) -> Result<String, String> {
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
+}
+
+/// Resolve the nixpkgs flake URL — use pinned revision from ws.lock if available
+fn resolve_flake() -> String {
+    if let Ok(content) = std::fs::read_to_string("ws.lock") {
+        for line in content.lines() {
+            let t = line.trim();
+            if let Some(rev) = t.strip_prefix("nixpkgs_revision: \"") {
+                if let Some(rev) = rev.strip_suffix("\"") {
+                    if !rev.is_empty() {
+                        return format!("github:NixOS/nixpkgs/{}", rev);
+                    }
+                }
+            }
+        }
+    }
+    "nixpkgs".to_string()
 }
 
 /// Remove a package and update ws.yaml + ws.lock
