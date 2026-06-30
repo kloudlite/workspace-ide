@@ -98,6 +98,10 @@ enum NixAction {
     List,
     /// Remove a package
     Remove { package: String },
+    /// Apply packages from ws.yaml (install missing ones)
+    Apply,
+    /// Sync ws.yaml + ws.lock from current state
+    Sync,
 }
 
 #[tokio::main]
@@ -120,6 +124,8 @@ async fn main() {
                 NixAction::Search { query } => nix::search(&query).map(|r| r.join("\n")),
                 NixAction::List => nix::list().map(|r| r.join("\n")),
                 NixAction::Remove { package } => nix::remove(&package),
+                NixAction::Apply => nix::apply_yaml(),
+                NixAction::Sync => nix::sync(),
             };
             match result {
                 Ok(out) => println!("{}", out),
