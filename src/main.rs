@@ -70,6 +70,14 @@ enum Command {
     Diagnose { path: String },
     /// List running LSP sessions
     LspSessions,
+    /// LSP hover at a position
+    LspHover { path: String, line: usize, character: usize },
+    /// LSP go to definition at a position
+    LspDefinition { path: String, line: usize, character: usize },
+    /// LSP find references at a position
+    LspReferences { path: String, line: usize, character: usize },
+    /// LSP code completion at a position
+    LspCompletion { path: String, line: usize, character: usize },
     /// Nix package management
     Nix {
         #[command(subcommand)]
@@ -220,7 +228,19 @@ fn build_request(cmd: &Command) -> (&'static str, serde_json::Value) {
         Command::Logs { session_id } => ("logs", json!({ "session_id": session_id })),
         Command::Status { session_id } => ("status", json!({ "session_id": session_id })),
         Command::Kill { session_id } => ("kill", json!({ "session_id": session_id })),
-        Command::Diagnose { path } => ("diagnose", json!({ "path": path })),
+        Command::Diagnose { path } => ("lsp/diagnose", json!({ "path": path })),
+        Command::LspHover { path, line, character } => {
+            ("lsp/hover", json!({ "path": path, "line": line, "character": character }))
+        }
+        Command::LspDefinition { path, line, character } => {
+            ("lsp/definition", json!({ "path": path, "line": line, "character": character }))
+        }
+        Command::LspReferences { path, line, character } => {
+            ("lsp/references", json!({ "path": path, "line": line, "character": character }))
+        }
+        Command::LspCompletion { path, line, character } => {
+            ("lsp/completion", json!({ "path": path, "line": line, "character": character }))
+        }
         Command::Nix { .. }
         | Command::LspSessions
         | Command::Sessions
