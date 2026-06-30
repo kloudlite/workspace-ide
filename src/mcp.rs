@@ -294,30 +294,6 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<Value, String> {
             Ok(json!(crate::lsp::diagnose_file(path).await?))
         }
         "lsp_sessions" => Ok(json!(crate::lsp::list_sessions())),
-        "lsp_hover" => {
-            let path = get_str(args, "path")?;
-            let line = args.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let character = args.get("character").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            Ok(json!(crate::lsp::hover(path, line, character).await?))
-        }
-        "lsp_definition" => {
-            let path = get_str(args, "path")?;
-            let line = args.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let character = args.get("character").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            Ok(json!(crate::lsp::definition(path, line, character).await?))
-        }
-        "lsp_references" => {
-            let path = get_str(args, "path")?;
-            let line = args.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let character = args.get("character").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            Ok(json!(crate::lsp::references(path, line, character).await?))
-        }
-        "lsp_completion" => {
-            let path = get_str(args, "path")?;
-            let line = args.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let character = args.get("character").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            Ok(json!(crate::lsp::completion(path, line, character).await?))
-        }
         _ => Err(format!("Unknown tool: {}", name)),
     }
 }

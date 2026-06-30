@@ -32,10 +32,6 @@ pub fn router() -> Router {
         .route("/sessions", get(sessions_handler))
         .route("/lsp/diagnose", post(lsp_diagnose_handler))
         .route("/lsp/sessions", get(lsp_sessions_handler))
-        .route("/lsp/hover", post(lsp_hover_handler))
-        .route("/lsp/definition", post(lsp_definition_handler))
-        .route("/lsp/references", post(lsp_references_handler))
-        .route("/lsp/completion", post(lsp_completion_handler))
 }
 
 #[derive(Serialize)]
@@ -185,57 +181,4 @@ async fn lsp_diagnose_handler(
 
 async fn lsp_sessions_handler() -> Json<Value> {
     Json(serde_json::json!(lsp::list_sessions()))
-}
-
-fn get_path_and_pos(v: &Value) -> Result<(&str, usize, usize), (StatusCode, Json<ErrorResponse>)> {
-    let path = get_str(v, "path")?;
-    let line = v
-        .get("line")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| err(StatusCode::BAD_REQUEST, "missing line"))? as usize;
-    let character =
-        v.get("character")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| err(StatusCode::BAD_REQUEST, "missing character"))? as usize;
-    Ok((path, line, character))
-}
-
-async fn lsp_hover_handler(
-    Json(req): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
-    let (path, line, character) = get_path_and_pos(&req)?;
-    lsp::hover(path, line, character)
-        .await
-        .map(Json)
-        .map_err(|e| err(StatusCode::BAD_REQUEST, e))
-}
-
-async fn lsp_definition_handler(
-    Json(req): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
-    let (path, line, character) = get_path_and_pos(&req)?;
-    lsp::definition(path, line, character)
-        .await
-        .map(Json)
-        .map_err(|e| err(StatusCode::BAD_REQUEST, e))
-}
-
-async fn lsp_references_handler(
-    Json(req): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
-    let (path, line, character) = get_path_and_pos(&req)?;
-    lsp::references(path, line, character)
-        .await
-        .map(Json)
-        .map_err(|e| err(StatusCode::BAD_REQUEST, e))
-}
-
-async fn lsp_completion_handler(
-    Json(req): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
-    let (path, line, character) = get_path_and_pos(&req)?;
-    lsp::completion(path, line, character)
-        .await
-        .map(Json)
-        .map_err(|e| err(StatusCode::BAD_REQUEST, e))
 }
