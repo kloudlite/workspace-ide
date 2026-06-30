@@ -206,11 +206,8 @@ fn write_workspace_files() -> Result<(), String> {
 
     let mut lock = String::new();
     lock.push_str("# ws lockfile — auto-generated, commit this\n");
-    // Get nixpkgs revision from one of the installed packages
-    if let Some(pkg) = pkgs.values().next() {
-        if let Ok(rev) = get_nixpkgs_revision() {
-            lock.push_str(&format!("nixpkgs: \"{}\"\n", rev));
-        }
+    if let Ok(rev) = get_nixpkgs_revision() {
+        lock.push_str(&format!("nixpkgs_revision: \"{}\"\n", rev));
     }
     lock.push_str("packages:\n");
     lock.push_str(&lock_pkgs.join("\n"));
@@ -222,22 +219,19 @@ fn write_workspace_files() -> Result<(), String> {
 
 /// Get the pinned nixpkgs revision from an installed package's flake URL
 fn get_nixpkgs_revision() -> Result<String, String> {
+    // Use `nix flake metadata` to get the exact locked revision
     let output = nix_cmd()?
-        .args(["profile", "list", "--json"])
+        .args(["flake", "metadata", "nixpkgs", "--json"])
         .output()
-        .map_err(|e| format!("nix list: {}", e))?;
+        .map_err(|e| format!("nix flake metadata: {}", e))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let val: serde_json::Value = serde_json::from_str(&stdout).map_err(|e| e.to_string())?;
-    if let Some(elements) = val.get("elements").and_then(|e| e.as_object()) {
-        for info in elements.values() {
-            if let Some(url) = info.get("url").and_then(|v| v.as_str()) {
-                // URL format: https://releases.nixos.org/.../nixexprs.tar.xz?narHash=...
-                // Extract the revision from the path
-                if let Some(revision) = url.split('/').nth(7) {
-                    return Ok(revision.to_string());
-                }
-            }
+    let val: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("parse flake metadata: {}", e))?;
+    // The JSON has fields: url, locked, original, etc.
+    if let Some(locked) = val.get("locked") {
+        if let Some(rev) = locked.get("rev").and_then(|v| v.as_str()) {
+            return Ok(rev.to_string());
         }
     }
-    Err("could not determine nixpkgs revision".into())
+    Err("no locked revision found".into())
 }
