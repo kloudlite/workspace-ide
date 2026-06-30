@@ -79,6 +79,7 @@ enum Command {
     /// LSP code completion at a position
     LspCompletion { path: String, line: usize, character: usize },
     /// Run a git command on the server
+    #[command(trailing_var_arg = true)]
     Git { args: Vec<String> },
     /// Nix package management
     Nix {
