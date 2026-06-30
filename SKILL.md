@@ -31,6 +31,7 @@ ws find <path> [--name <glob>]    # Find files matching a glob
 
 ```bash
 ws bash "<command>"               # Execute any shell command
+ws git <args>                     # Run git commands (use -- before flags: ws git -- --global --add safe.directory /workspace)
 ```
 
 ### Background Sessions
