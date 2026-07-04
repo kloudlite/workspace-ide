@@ -113,11 +113,11 @@ pub async fn lsp_request(
         return Err(format!("no LSP server for {}", ext));
     }
     let svr = servers.into_iter().next().unwrap().clone();
-    let _ = ensure_binary(&svr.binary);
+    let _ = ensure_binary(svr.binary);
     for pkg in svr.nix_packages {
         let _ = crate::nix::install(pkg);
     }
-    let bin_path = ensure_binary(&svr.binary)?;
+    let bin_path = ensure_binary(svr.binary)?;
     let root = find_root(file_path, svr.needs_lockfile);
     let language_id = svr.language_id;
     let content = tokio::fs::read_to_string(file_path)
@@ -132,7 +132,7 @@ pub async fn lsp_request(
     // Use std::process::Command (blocking) to avoid tokio pipe bugs
     tokio::task::spawn_blocking(move || {
         let mut child = match std::process::Command::new(&bin_path)
-            .args(&*svr.args)
+            .args(svr.args)
             .current_dir(&root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -274,7 +274,7 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
         let session = match session {
             Some(s) => s,
             None => {
-                let (child, stdin) = start_server(&svr, &root).await?;
+                let (child, stdin) = start_server(svr, &root).await?;
                 let session = Session {
                     server_id: sid.clone(),
                     root: root.clone(),
@@ -307,7 +307,7 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
 async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, ChildStdin), String> {
     let bin_path = ensure_binary(svr.binary)?;
     let mut cmd = Command::new(&bin_path);
-    cmd.args(&*svr.args);
+    cmd.args(svr.args);
     cmd.current_dir(root);
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
