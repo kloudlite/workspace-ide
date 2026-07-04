@@ -121,47 +121,52 @@ pub async fn read_file(path: &str) -> Result<ReadResult, ToolError> {
 }
 
 pub async fn run_bash(command: &str, timeout_secs: Option<u64>) -> BashResult {
-    let mut child = Command::new("sh");
-    child.arg("-c").arg(command);
-    child.stdout(Stdio::piped()).stderr(Stdio::piped());
+    // ponytail: default 5min timeout — forces spawn for persistent commands
+    let timeout = timeout_secs.unwrap_or(300);
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(command);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     // ponytail: include nix user profile bin so pkg_install'd tools are on PATH
     if let Ok(home) = std::env::var("HOME") {
         let nix_bin = format!("{}/.local/state/nix/profile/bin", home);
         if let Ok(existing) = std::env::var("PATH") {
-            child.env("PATH", format!("{}:{}", nix_bin, existing));
+            cmd.env("PATH", format!("{}:{}", nix_bin, existing));
         }
     }
 
-    let output = match timeout_secs {
-        Some(secs) => {
-            match tokio::time::timeout(std::time::Duration::from_secs(secs), child.output()).await {
-                Ok(Ok(o)) => o,
-                Ok(Err(e)) => {
-                    return BashResult {
-                        stdout: String::new(),
-                        stderr: e.to_string(),
-                        exit_code: -1,
-                    };
-                }
-                Err(_) => {
-                    return BashResult {
-                        stdout: String::new(),
-                        stderr: "command timed out".into(),
-                        exit_code: -1,
-                    };
-                }
-            }
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            return BashResult {
+                stdout: String::new(),
+                stderr: e.to_string(),
+                exit_code: -1,
+            };
         }
-        None => match child.output().await {
-            Ok(o) => o,
-            Err(e) => {
-                return BashResult {
-                    stdout: String::new(),
-                    stderr: e.to_string(),
-                    exit_code: -1,
-                };
+    };
+
+    let pid = child.id().unwrap_or(0);
+
+    let output = match tokio::time::timeout(std::time::Duration::from_secs(timeout), child.wait_with_output()).await {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => {
+            return BashResult {
+                stdout: String::new(),
+                stderr: e.to_string(),
+                exit_code: -1,
+            };
+        }
+        Err(_) => {
+            // timeout — kill the child by pid so it doesn't become an orphan
+            if pid > 0 {
+                let _ = tokio::process::Command::new("kill").arg(pid.to_string()).status().await;
             }
-        },
+            return BashResult {
+                stdout: String::new(),
+                stderr: format!("command timed out after {}s", timeout),
+                exit_code: -1,
+            };
+        }
     };
 
     BashResult {
