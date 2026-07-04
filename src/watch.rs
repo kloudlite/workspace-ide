@@ -38,10 +38,7 @@ pub fn start_watch(root: &str) -> Result<(), String> {
                 match result {
                     Ok(diags) => {
                         for d in &diags {
-                            let sev = ["", "ERROR", "WARN", "INFO", "HINT"]
-                                .get(d.severity as usize)
-                                .unwrap_or(&"?");
-                            eprintln!("  {} {}:{}  {}", sev, d.line + 1, d.column + 1, d.message);
+                            eprintln!("  {} {}:{}  {}", severity_label(d.severity), d.line + 1, d.column + 1, d.message);
                         }
                     }
                     Err(e) => eprintln!("  lsp init error: {}", e),
@@ -96,12 +93,9 @@ pub fn start_watch(root: &str) -> Result<(), String> {
                     match lsp::diagnose_file(path).await {
                         Ok(diags) => {
                             for d in &diags {
-                                let sev = ["", "ERROR", "WARN", "INFO", "HINT"]
-                                    .get(d.severity as usize)
-                                    .unwrap_or(&"?");
                                 eprintln!(
                                     "  {} {}:{}  {}",
-                                    sev,
+                                    severity_label(d.severity),
                                     d.line + 1,
                                     d.column + 1,
                                     d.message
@@ -121,6 +115,10 @@ pub fn start_watch(root: &str) -> Result<(), String> {
         lsp::server::SERVERS.len()
     );
     Ok(())
+}
+
+fn severity_label(s: u8) -> &'static str {
+    ["", "ERROR", "WARN", "INFO", "HINT"].get(s as usize).unwrap_or(&"?")
 }
 
 // ponytail: single shared walk, replaces duplicate do_scan + walk_dir
@@ -143,16 +141,8 @@ fn walk_files(dir: &Path, f: &mut dyn FnMut(&Path)) {
         if !path.is_file() {
             continue;
         }
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| format!(".{}", e))
-            .unwrap_or_default();
-        let ext = if ext == "." && path.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
-            "Dockerfile".to_string()
-        } else {
-            ext
-        };
+        let path_str = path.to_string_lossy().to_string();
+        let ext = lsp::extension_for(&path_str);
         if ext.is_empty() || lsp::server::for_extension(&ext).is_empty() {
             continue;
         }
@@ -166,13 +156,7 @@ fn initial_scan(root: &Path) -> (HashMap<String, SystemTime>, Vec<(String, Strin
     let mut samples = Vec::new();
     walk_files(root, &mut |path| {
         let path_str = path.to_string_lossy().to_string();
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let ext =
-            if ext.is_empty() && path.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
-                "Dockerfile"
-            } else {
-                ext
-            };
+        let ext = lsp::extension_for(&path_str);
         if let Ok(meta) = path.metadata() {
             if let Ok(mtime) = meta.modified() {
                 mtimes.insert(path_str.clone(), mtime);

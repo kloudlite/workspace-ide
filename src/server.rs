@@ -228,19 +228,7 @@ async fn lsp_request_handler(
     let path = get_str(&req, "path")?;
     let line = req.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
     let col = req.get("column").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-    let params = serde_json::json!({
-        "textDocument": { "uri": format!("file://{}", path) },
-        "position": { "line": line, "character": col },
-    });
-    let params = if method.ends_with("/references") {
-        serde_json::json!({
-            "textDocument": { "uri": format!("file://{}", path) },
-            "position": { "line": line, "character": col },
-            "context": { "includeDeclaration": true },
-        })
-    } else {
-        params
-    };
+    let params = lsp::lsp_params(path, line, col, method);
     lsp::lsp_request(path, method, params)
         .await
         .map(Json)

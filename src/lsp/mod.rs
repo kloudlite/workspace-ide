@@ -66,7 +66,7 @@ fn state() -> &'static Mutex<LspState> {
     })
 }
 
-fn extension_for(path: &str) -> String {
+pub(crate) fn extension_for(path: &str) -> String {
     let ext = match Path::new(path).extension() {
         Some(e) => format!(".{}", e.to_string_lossy()),
         None => return String::new(),
@@ -475,6 +475,18 @@ fn find_root(file_path: &str, needs_lockfile: bool) -> String {
         current = d.parent();
     }
     dir.to_string_lossy().to_string()
+}
+
+/// Build LSP request params for a position. Shared by server.rs and mcp.rs.
+pub fn lsp_params(path: &str, line: u32, col: u32, method: &str) -> serde_json::Value {
+    let mut p = serde_json::json!({
+        "textDocument": { "uri": format!("file://{}", path) },
+        "position": { "line": line, "character": col },
+    });
+    if method.ends_with("/references") {
+        p["context"] = serde_json::json!({ "includeDeclaration": true });
+    }
+    p
 }
 
 pub fn list_sessions() -> Vec<(String, String)> {

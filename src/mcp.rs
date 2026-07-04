@@ -309,19 +309,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<Value, String> {
             let path = get_str(args, "path")?;
             let line = args.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
             let col = args.get("column").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-            let params = serde_json::json!({
-                "textDocument": { "uri": format!("file://{}", path) },
-                "position": { "line": line, "character": col },
-            });
-            let params = if method.ends_with("/references") {
-                serde_json::json!({
-                    "textDocument": { "uri": format!("file://{}", path) },
-                    "position": { "line": line, "character": col },
-                    "context": { "includeDeclaration": true },
-                })
-            } else {
-                params
-            };
+            let params = crate::lsp::lsp_params(path, line, col, method);
             crate::lsp::lsp_request(path, method, params)
                 .await
                 .map(|v| json!(v))
