@@ -327,7 +327,6 @@ async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, Chi
 
     let diags_arc: Arc<Mutex<Vec<Diagnostic>>> = Arc::new(Mutex::new(Vec::new()));
     let diags = diags_arc.clone();
-    let sid = svr.id.to_string();
     tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
         let mut reader = tokio::io::BufReader::new(stdout);
@@ -338,9 +337,9 @@ async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, Chi
                 Ok(0) => break,
                 Ok(n) => {
                     data.extend_from_slice(&buf[..n]);
-                    while let Ok((msg, rest)) = parse_jsonrpc(&data) {
+                    while let Some((msg, rest)) = parse_jsonrpc(&data) {
                         if msg.get("method").and_then(|v| v.as_str()).is_some() {
-                            process_message(&sid, &msg, &diags).await;
+                            process_message(&msg, &diags).await;
                         }
                         data = rest.to_vec();
                     }
@@ -355,29 +354,21 @@ async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, Chi
     Ok((child, stdin))
 }
 
-fn extract_content_length(data: &[u8]) -> Option<(usize, usize)> {
+fn parse_jsonrpc(data: &[u8]) -> Option<(serde_json::Value, &[u8])> {
     let s = std::str::from_utf8(data).ok()?;
-    if let Some(pos) = s.find("\r\n\r\n") {
-        let header = &s[..pos];
-        for line in header.lines() {
-            if let Some(len_str) = line.strip_prefix("Content-Length: ") {
-                let len: usize = len_str.trim().parse().ok()?;
-                let body_start = pos + 4;
-                if data.len() >= body_start + len {
-                    return Some((body_start, len));
-                }
-            }
-        }
+    let pos = s.find("\r\n\r\n")?;
+    let header = &s[..pos];
+    let len: usize = header
+        .lines()
+        .find_map(|line| line.strip_prefix("Content-Length: ")?.trim().parse().ok())?;
+    let body_start = pos + 4;
+    if data.len() < body_start + len {
+        return None;
     }
-    None
-}
-
-fn parse_jsonrpc(data: &[u8]) -> Result<(serde_json::Value, &[u8]), ()> {
-    let (start, len) = extract_content_length(data).ok_or(())?;
-    let body = &data[start..start + len];
-    let rest = &data[start + len..];
-    let msg: serde_json::Value = serde_json::from_slice(body).map_err(|_| ())?;
-    Ok((msg, rest))
+    let body = &data[body_start..body_start + len];
+    let rest = &data[body_start + len..];
+    let msg = serde_json::from_slice(body).ok()?;
+    Some((msg, rest))
 }
 
 async fn write_msg(stdin: &mut ChildStdin, msg: &serde_json::Value) {
@@ -413,7 +404,7 @@ async fn send_initialize(stdin: &mut ChildStdin) -> Result<(), String> {
     Ok(())
 }
 
-async fn process_message(_sid: &str, msg: &serde_json::Value, diags: &Arc<Mutex<Vec<Diagnostic>>>) {
+async fn process_message(msg: &serde_json::Value, diags: &Arc<Mutex<Vec<Diagnostic>>>) {
     if let Some(params) = msg.get("params") {
         if let Some(uri) = params.get("uri").and_then(|v| v.as_str()) {
             if let Some(diagnostics) = params.get("diagnostics").and_then(|v| v.as_array()) {
