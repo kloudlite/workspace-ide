@@ -121,11 +121,11 @@ pub async fn read_file(path: &str) -> Result<ReadResult, ToolError> {
 }
 
 pub async fn run_bash(command: &str, timeout_secs: Option<u64>) -> BashResult {
-    // ponytail: default 5min timeout — forces spawn for persistent commands
-    let timeout = timeout_secs.unwrap_or(300);
     let mut cmd = Command::new("sh");
     cmd.arg("-c").arg(command);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    // ponytail: new process group so kill Session kills the whole tree
+    cmd.process_group(0);
     // ponytail: include nix user profile bin so pkg_install'd tools are on PATH
     if let Ok(home) = std::env::var("HOME") {
         let nix_bin = format!("{}/.local/state/nix/profile/bin", home);
@@ -144,28 +144,37 @@ pub async fn run_bash(command: &str, timeout_secs: Option<u64>) -> BashResult {
             };
         }
     };
+    // ponytail: guard kills child on drop — fires when HTTP client disconnects
+    let mut guard = ChildGuard { child: Some(child) };
 
-    let pid = child.id().unwrap_or(0);
-
-    let output = match tokio::time::timeout(std::time::Duration::from_secs(timeout), child.wait_with_output()).await {
-        Ok(Ok(o)) => o,
-        Ok(Err(e)) => {
-            return BashResult {
-                stdout: String::new(),
-                stderr: e.to_string(),
-                exit_code: -1,
-            };
-        }
-        Err(_) => {
-            // timeout — kill the child by pid so it doesn't become an orphan
-            if pid > 0 {
-                let _ = tokio::process::Command::new("kill").arg(pid.to_string()).status().await;
+    let output = if let Some(secs) = timeout_secs {
+        match tokio::time::timeout(std::time::Duration::from_secs(secs), guard.wait()).await {
+            Ok(Ok(o)) => o,
+            Ok(Err(e)) => {
+                return BashResult {
+                    stdout: String::new(),
+                    stderr: e.to_string(),
+                    exit_code: -1,
+                };
             }
-            return BashResult {
-                stdout: String::new(),
-                stderr: format!("command timed out after {}s", timeout),
-                exit_code: -1,
-            };
+            Err(_) => {
+                return BashResult {
+                    stdout: String::new(),
+                    stderr: format!("command timed out after {}s", secs),
+                    exit_code: -1,
+                };
+            }
+        }
+    } else {
+        match guard.wait().await {
+            Ok(o) => o,
+            Err(e) => {
+                return BashResult {
+                    stdout: String::new(),
+                    stderr: e.to_string(),
+                    exit_code: -1,
+                };
+            }
         }
     };
 
@@ -173,6 +182,25 @@ pub async fn run_bash(command: &str, timeout_secs: Option<u64>) -> BashResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         exit_code: output.status.code().unwrap_or(-1),
+    }
+}
+
+// ponytail: kills child on drop — cleans up when HTTP client disconnects mid-bash
+struct ChildGuard {
+    child: Option<tokio::process::Child>,
+}
+
+impl ChildGuard {
+    async fn wait(&mut self) -> std::io::Result<std::process::Output> {
+        self.child.take().unwrap().wait_with_output().await
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.start_kill();
+        }
     }
 }
 
@@ -349,6 +377,8 @@ pub async fn spawn_bash(command: &str) -> Result<SpawnResult, ToolError> {
     let mut cmd = tokio::process::Command::new("sh");
     cmd.arg("-c").arg(command);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    // ponytail: new process group so kill kills the whole tree
+    cmd.process_group(0);
     // ponytail: same nix PATH fix as run_bash
     if let Ok(home) = std::env::var("HOME") {
         let nix_bin = format!("{}/.local/state/nix/profile/bin", home);
@@ -464,9 +494,9 @@ pub async fn kill_session(session_id: &str) -> Result<KillResult, ToolError> {
         });
     }
 
-    // ponytail: kill via `kill` command; signal(SIGTERM) more direct but adds dep
+    // ponytail: kill process group (negative pid) so grandchildren die too
     let status = tokio::process::Command::new("kill")
-        .arg(pid.to_string())
+        .arg(format!("-{}", pid))
         .status()
         .await
         .map_err(|e| ToolError(format!("kill failed: {}", e)))?;
