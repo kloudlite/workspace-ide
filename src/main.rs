@@ -143,7 +143,7 @@ async fn start_server(port: u16) {
         env!("CARGO_PKG_VERSION"),
         addr
     );
-    let _ = watch::start_watch(".");
+    watch::start_watch(".");
     // ponytail: restore user-installed packages on startup (reinstalls from cache)
     match crate::nix::apply_yaml() {
         Ok(msg) => eprintln!("ws: {}", msg),

@@ -13,12 +13,17 @@ struct PollWatcher {
     mtimes: HashMap<String, SystemTime>,
 }
 
-pub fn start_watch(root: &str) -> Result<(), String> {
-    let root = Path::new(root)
-        .canonicalize()
-        .map_err(|e| format!("bad path: {}", e))?;
+pub fn start_watch(root: &str) {
+    let root = match Path::new(root).canonicalize() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("ws: watch error: {}", e);
+            return;
+        }
+    };
     if !root.is_dir() {
-        return Err(format!("not a directory: {}", root.display()));
+        eprintln!("ws: not a directory: {}", root.display());
+        return;
     }
 
     let root_str = root.to_string_lossy().to_string();
@@ -130,7 +135,6 @@ pub fn start_watch(root: &str) -> Result<(), String> {
         root_str,
         lsp::server::SERVERS.len()
     );
-    Ok(())
 }
 
 fn severity_label(s: u8) -> &'static str {
