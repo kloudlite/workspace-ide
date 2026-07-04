@@ -259,7 +259,7 @@ pub fn apply_yaml() -> Result<String, String> {
         if current.iter().any(|c| c == name) {
             eprintln!("ws: {} already installed", pkg);
         } else {
-            match install(pkg) {
+            match install(name) {
                 Ok(m) => installed.push(format!("  {}: {}", pkg, m)),
                 Err(e) => eprintln!("ws: {} install failed: {}", pkg, e),
             }
@@ -292,11 +292,7 @@ fn write_workspace_files() -> Result<(), String> {
         if !explicit.contains(name.as_str()) {
             continue;
         }
-        let yaml_entry = if version.is_empty() {
-            format!("  - {}", name)
-        } else {
-            format!("  - {}@{}", name, version)
-        };
+        let yaml_entry = format!("  - {}", name);
         yaml_pkgs.push(yaml_entry);
     }
     yaml.push_str("# ws packages — managed by 'ws nix'\npackages:\n");

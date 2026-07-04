@@ -144,6 +144,11 @@ async fn start_server(port: u16) {
         addr
     );
     let _ = watch::start_watch(".");
+    // ponytail: restore user-installed packages on startup (reinstalls from cache)
+    match crate::nix::apply_yaml() {
+        Ok(msg) => eprintln!("ws: {}", msg),
+        Err(e) => eprintln!("ws: apply_yaml error: {}", e),
+    }
     axum::serve(listener, app).await.expect("serve failed");
 }
 
