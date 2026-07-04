@@ -46,6 +46,7 @@ pub fn router() -> Router {
         .route("/lsp/request", post(lsp_request_handler))
         .route("/fs/tree", post(fs_tree_handler))
         .route("/fs/status", get(fs_status_handler))
+        .route("/fs/diff", get(fs_diff_handler))
 }
 
 async fn read_handler(
@@ -256,5 +257,12 @@ async fn fs_status_handler() -> Json<tools::FsStatusResult> {
         branches: vec![],
         changes: vec![],
         ignored_patterns: vec![],
+    }))
+}
+
+async fn fs_diff_handler() -> Json<tools::FsDiffResult> {
+    Json(tools::fs_diff().await.unwrap_or(tools::FsDiffResult {
+        unstaged: String::new(),
+        staged: String::new(),
     }))
 }

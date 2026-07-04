@@ -91,6 +91,12 @@ pub struct FsEntry {
     pub size: u64,
 }
 
+#[derive(Serialize)]
+pub struct FsDiffResult {
+    pub unstaged: String,
+    pub staged: String,
+}
+
 #[derive(Debug)]
 pub struct ToolError(pub String);
 
@@ -545,6 +551,27 @@ pub async fn fs_tree(path: &str, depth: u32) -> Result<FsTreeResult, ToolError> 
         a.is_dir.cmp(&b.is_dir).reverse().then(a.path.cmp(&b.path))
     });
     Ok(FsTreeResult { root: root_str, entries })
+}
+
+pub async fn fs_diff() -> Result<FsDiffResult, ToolError> {
+    // ponytail: shell out to git — same binary, no new deps
+    let unstaged = Command::new("git")
+        .args(["diff"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+    let staged = Command::new("git")
+        .args(["diff", "--cached"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+    Ok(FsDiffResult { unstaged, staged })
 }
 
 pub async fn fs_status() -> Result<FsStatusResult, ToolError> {
