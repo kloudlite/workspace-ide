@@ -19,7 +19,7 @@ fn ensure_binary(binary: &str) -> Result<String, String> {
             }
         }
     }
-    let _ = crate::nix::install(binary);
+    let _ = crate::nix::install_auto(binary);
     if let Ok(out) = std::process::Command::new("which").arg(binary).output() {
         if out.status.success() {
             let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -115,7 +115,7 @@ pub async fn lsp_request(
     let svr = servers.into_iter().next().unwrap().clone();
     let _ = ensure_binary(svr.binary);
     for pkg in svr.nix_packages {
-        let _ = crate::nix::install(pkg);
+        let _ = crate::nix::install_auto(pkg);
     }
     let bin_path = ensure_binary(svr.binary)?;
     let root = find_root(file_path, svr.needs_lockfile);
@@ -542,7 +542,7 @@ pub fn reconcile_lsp() -> (usize, usize) {
         if needed.contains(svr.binary) {
             if !on_path {
                 eprintln!("ws: installing LSP: {}", svr.binary);
-                let _ = crate::nix::install(svr.binary);
+                let _ = crate::nix::install_auto(svr.binary);
                 installed_count += 1;
             }
         } else if on_path {

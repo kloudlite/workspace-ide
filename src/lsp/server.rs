@@ -104,9 +104,3 @@ pub fn for_extension(ext: &str) -> Vec<&'static LspServer> {
         .filter(|s| s.extensions.contains(&ext))
         .collect()
 }
-
-/// All LSP-related nix package names — excluded from ws.yaml (auto-installed on startup).
-pub fn all_packages() -> Vec<&'static str> {
-    // ponytail: only filter binary names (IDE tools), not shared deps (cargo, go, nodejs)
-    SERVERS.iter().map(|s| s.binary).collect()
-}

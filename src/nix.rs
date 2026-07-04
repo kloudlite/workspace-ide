@@ -4,9 +4,16 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Command;
+use std::sync::Mutex;
 
 const NIX_BIN: &str = "/nix/var/nix/profiles/default/bin/nix";
 const NIX_PROFILE_BIN: &str = "/nix/var/nix/profiles/default/bin";
+
+/// Packages explicitly installed by the user (pkg_install), not auto-installed by LSP.
+fn explicit_packages() -> &'static Mutex<HashSet<String>> {
+    static PKGS: std::sync::OnceLock<Mutex<HashSet<String>>> = std::sync::OnceLock::new();
+    PKGS.get_or_init(|| Mutex::new(HashSet::new()))
+}
 
 /// Ensure Nix is available and user profile symlink is valid.
 /// Called at server startup.
@@ -59,9 +66,19 @@ fn find_nix() -> Option<String> {
     None
 }
 
-/// Install a package. Supports `pkg@version` (e.g. go@1.21, nodejs@18).
-/// Pins nixpkgs revision from ws.lock if available.
+/// Install a package (user-requested). Marks it for ws.yaml.
 pub fn install(input: &str) -> Result<String, String> {
+    let (name, _) = input.split_once('@').unwrap_or((input, ""));
+    explicit_packages().lock().unwrap().insert(name.to_string());
+    install_inner(input)
+}
+
+/// Install a package (auto-dependency, e.g. LSP). Skips ws.yaml.
+pub fn install_auto(input: &str) -> Result<String, String> {
+    install_inner(input)
+}
+
+fn install_inner(input: &str) -> Result<String, String> {
     let (name, version) = input.split_once('@').unwrap_or((input, ""));
     if version.is_empty() {
         install_one(&resolve_flake(), name)
@@ -257,9 +274,7 @@ pub fn apply_yaml() -> Result<String, String> {
 
 fn write_workspace_files() -> Result<(), String> {
     let pkgs = get_installed()?;
-    // ponytail: LSP servers are auto-installed at startup, not developer deps
-    let lsp_pkgs: HashSet<&str> =
-        crate::lsp::server::all_packages().into_iter().collect();
+    let explicit = explicit_packages().lock().unwrap();
     let mut yaml = String::new();
     let mut lock_pkgs = Vec::new();
     let mut yaml_pkgs = Vec::new();
@@ -268,13 +283,13 @@ fn write_workspace_files() -> Result<(), String> {
             continue;
         }
         let version = extract_version(store_path);
-        // ws.lock tracks everything (including LSP servers for reproducibility)
+        // ws.lock tracks everything for reproducibility
         lock_pkgs.push(format!(
             "  {}:\n      version: \"{}\"\n      store: \"{}\"",
             name, version, store_path
         ));
-        // ws.yaml is dev deps only — skip IDE/LSP tooling
-        if lsp_pkgs.contains(name.as_str()) {
+        // ws.yaml: only explicit user-installed packages
+        if !explicit.contains(name.as_str()) {
             continue;
         }
         let yaml_entry = if version.is_empty() {
