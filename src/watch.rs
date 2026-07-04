@@ -167,11 +167,12 @@ fn initial_scan(root: &Path) -> (HashMap<String, SystemTime>, Vec<(String, Strin
     walk_files(root, &mut |path| {
         let path_str = path.to_string_lossy().to_string();
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let ext = if ext.is_empty() && path.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
-            "Dockerfile"
-        } else {
-            ext
-        };
+        let ext =
+            if ext.is_empty() && path.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
+                "Dockerfile"
+            } else {
+                ext
+            };
         if let Ok(meta) = path.metadata() {
             if let Ok(mtime) = meta.modified() {
                 mtimes.insert(path_str.clone(), mtime);

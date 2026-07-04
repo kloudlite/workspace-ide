@@ -322,7 +322,9 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<Value, String> {
             } else {
                 params
             };
-            crate::lsp::lsp_request(path, method, params).await.map(|v| json!(v))
+            crate::lsp::lsp_request(path, method, params)
+                .await
+                .map(|v| json!(v))
         }
         "lsp_sessions" => Ok(json!(crate::lsp::list_sessions())),
         _ => Err(format!("Unknown tool: {}", name)),

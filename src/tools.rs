@@ -318,7 +318,9 @@ pub async fn spawn_bash(command: &str) -> Result<SpawnResult, ToolError> {
             cmd.env("PATH", format!("{}:{}", nix_bin, existing));
         }
     }
-    let mut child = cmd.spawn().map_err(|e| ToolError(format!("failed to spawn: {}", e)))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| ToolError(format!("failed to spawn: {}", e)))?;
 
     let pid = child.id().unwrap_or(0);
 

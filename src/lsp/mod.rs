@@ -78,15 +78,8 @@ fn extension_for(path: &str) -> String {
     }
 }
 
-
-
 /// Open a file in the LSP session (textDocument/didOpen).
-async fn send_did_open(
-    stdin: &mut ChildStdin,
-    path: &str,
-    language_id: &str,
-    content: &str,
-) {
+async fn send_did_open(stdin: &mut ChildStdin, path: &str, language_id: &str, content: &str) {
     write_msg(
         stdin,
         &serde_json::json!({
@@ -249,9 +242,6 @@ pub async fn lsp_request(
     .map_err(|_| "join error".to_string())?
 }
 
-
-
-
 // --- Existing functions (diagnose, server lifecycle) ---
 
 pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
@@ -314,10 +304,7 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
     Ok(all_diags)
 }
 
-async fn start_server(
-    svr: &server::LspServer,
-    root: &str,
-) -> Result<(Child, ChildStdin), String> {
+async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, ChildStdin), String> {
     let bin_path = ensure_binary(svr.binary)?;
     let mut cmd = Command::new(&bin_path);
     cmd.args(&*svr.args);
@@ -326,7 +313,10 @@ async fn start_server(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit());
     // Debug: check if PATH includes nix profile bin
-    eprintln!("ws: start_server PATH={}", std::env::var("PATH").unwrap_or_default());
+    eprintln!(
+        "ws: start_server PATH={}",
+        std::env::var("PATH").unwrap_or_default()
+    );
     eprintln!("ws: spawning {} in {} with {}", svr.id, root, bin_path);
 
     let mut child = cmd
@@ -423,11 +413,7 @@ async fn send_initialize(stdin: &mut ChildStdin) -> Result<(), String> {
     Ok(())
 }
 
-async fn process_message(
-    _sid: &str,
-    msg: &serde_json::Value,
-    diags: &Arc<Mutex<Vec<Diagnostic>>>,
-) {
+async fn process_message(_sid: &str, msg: &serde_json::Value, diags: &Arc<Mutex<Vec<Diagnostic>>>) {
     if let Some(params) = msg.get("params") {
         if let Some(uri) = params.get("uri").and_then(|v| v.as_str()) {
             if let Some(diagnostics) = params.get("diagnostics").and_then(|v| v.as_array()) {
@@ -435,12 +421,9 @@ async fn process_message(
                 let mut collected = Vec::new();
                 for d in diagnostics {
                     if let Some(range) = d.get("range").and_then(|r| r.get("start")) {
-                        let line =
-                            range.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                        let col = range
-                            .get("character")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0) as usize;
+                        let line = range.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                        let col =
+                            range.get("character").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
                         let severity =
                             d.get("severity").and_then(|v| v.as_u64()).unwrap_or(1) as u8;
                         let message = d

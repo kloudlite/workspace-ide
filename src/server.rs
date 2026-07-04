@@ -188,8 +188,7 @@ async fn pkg_search_handler(
     }
 }
 
-async fn pkg_list_handler(
-) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+async fn pkg_list_handler() -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     match crate::nix::list() {
         Ok(results) => Ok(Json(serde_json::json!({ "packages": results }))),
         Err(e) => Err(err(StatusCode::BAD_REQUEST, e)),

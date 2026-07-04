@@ -80,7 +80,14 @@ fn install_one(flake: &str, pkg: &str) -> Result<String, String> {
     if output.status.success() {
         eprintln!("ws: package {} installed", pkg);
         let _ = write_workspace_files();
-        Ok(format!("installed {}: {}", pkg, String::from_utf8_lossy(&output.stderr).lines().last().unwrap_or("")))
+        Ok(format!(
+            "installed {}: {}",
+            pkg,
+            String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .last()
+                .unwrap_or("")
+        ))
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
@@ -103,7 +110,15 @@ fn install_version(name: &str, version: &str) -> Result<String, String> {
         if output.status.success() {
             eprintln!("ws: package {}@{} installed", name, version);
             let _ = write_workspace_files();
-            return Ok(format!("installed {}@{}: {}", name, version, String::from_utf8_lossy(&output.stderr).lines().last().unwrap_or("")));
+            return Ok(format!(
+                "installed {}@{}: {}",
+                name,
+                version,
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .last()
+                    .unwrap_or("")
+            ));
         }
     }
     Err(format!("no version {}@{} found in nixpkgs", name, version))

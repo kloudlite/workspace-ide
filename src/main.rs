@@ -23,26 +23,69 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    Serve { #[arg(short, long, default_value = "8321")] port: u16 },
+    Serve {
+        #[arg(short, long, default_value = "8321")]
+        port: u16,
+    },
     Mcp,
-    Read { path: String },
-    Bash { command: String },
-    Edit { path: String, old_text: String, new_text: String },
-    Write { path: String, content: String },
-    Grep { pattern: String, path: Option<String> },
-    Find { path: String, #[arg(long)] name: Option<String> },
-    Ls { path: String },
-    Spawn { command: String },
-    Logs { session_id: String },
-    Status { session_id: String },
-    Kill { session_id: String },
+    Read {
+        path: String,
+    },
+    Bash {
+        command: String,
+    },
+    Edit {
+        path: String,
+        old_text: String,
+        new_text: String,
+    },
+    Write {
+        path: String,
+        content: String,
+    },
+    Grep {
+        pattern: String,
+        path: Option<String>,
+    },
+    Find {
+        path: String,
+        #[arg(long)]
+        name: Option<String>,
+    },
+    Ls {
+        path: String,
+    },
+    Spawn {
+        command: String,
+    },
+    Logs {
+        session_id: String,
+    },
+    Status {
+        session_id: String,
+    },
+    Kill {
+        session_id: String,
+    },
     Sessions,
-    Diagnose { path: String },
-    Lsp { method: String, path: String, line: u32, column: u32 },
+    Diagnose {
+        path: String,
+    },
+    Lsp {
+        method: String,
+        path: String,
+        line: u32,
+        column: u32,
+    },
     LspSessions,
     #[command(trailing_var_arg = true)]
-    Git { args: Vec<String> },
-    Pkg { #[command(subcommand)] action: PkgAction },
+    Git {
+        args: Vec<String>,
+    },
+    Pkg {
+        #[command(subcommand)]
+        action: PkgAction,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -91,9 +134,15 @@ async fn main() {
 async fn start_server(port: u16) {
     nix::setup_env();
     let addr = format!("0.0.0.0:{}", port);
-    let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind failed");
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .expect("bind failed");
     let app = server::router();
-    println!("ws {} listening on http://{}", env!("CARGO_PKG_VERSION"), addr);
+    println!(
+        "ws {} listening on http://{}",
+        env!("CARGO_PKG_VERSION"),
+        addr
+    );
     let _ = watch::start_watch(".");
     axum::serve(listener, app).await.expect("serve failed");
 }
@@ -111,8 +160,18 @@ async fn remote_call(server: &str, cmd: &Command) {
             };
             let url = format!("{}/{}", base, endpoint);
             match client.get(&url).send().await {
-                Ok(resp) if resp.status().is_success() => println!("{}", resp.text().await.unwrap_or_default()),
-                Ok(resp) => { eprintln!("{} {}: {}", endpoint, resp.status(), resp.text().await.unwrap_or_default()); std::process::exit(1); }
+                Ok(resp) if resp.status().is_success() => {
+                    println!("{}", resp.text().await.unwrap_or_default())
+                }
+                Ok(resp) => {
+                    eprintln!(
+                        "{} {}: {}",
+                        endpoint,
+                        resp.status(),
+                        resp.text().await.unwrap_or_default()
+                    );
+                    std::process::exit(1);
+                }
                 Err(e) => connection_error(server, e),
             }
         }
@@ -120,8 +179,18 @@ async fn remote_call(server: &str, cmd: &Command) {
             let (method, body) = command_route(cmd);
             let url = format!("{}/{}", base, method);
             match client.post(&url).json(&body).send().await {
-                Ok(resp) if resp.status().is_success() => println!("{}", resp.text().await.unwrap_or_default()),
-                Ok(resp) => { eprintln!("{} {}: {}", method, resp.status(), resp.text().await.unwrap_or_default()); std::process::exit(1); }
+                Ok(resp) if resp.status().is_success() => {
+                    println!("{}", resp.text().await.unwrap_or_default())
+                }
+                Ok(resp) => {
+                    eprintln!(
+                        "{} {}: {}",
+                        method,
+                        resp.status(),
+                        resp.text().await.unwrap_or_default()
+                    );
+                    std::process::exit(1);
+                }
                 Err(e) => connection_error(server, e),
             }
         }
@@ -131,8 +200,19 @@ async fn remote_call(server: &str, cmd: &Command) {
 fn ssh_call(host: &str, cmd: &Command) {
     // Build CLI args directly from Command — JSON map iteration is alphabetical, not insertion order
     let args: Vec<String> = match cmd {
-        Command::Lsp { method, path, line, column } => {
-            vec!["lsp".into(), method.clone(), path.clone(), line.to_string(), column.to_string()]
+        Command::Lsp {
+            method,
+            path,
+            line,
+            column,
+        } => {
+            vec![
+                "lsp".into(),
+                method.clone(),
+                path.clone(),
+                line.to_string(),
+                column.to_string(),
+            ]
         }
         Command::Find { path, name } => {
             let mut v = vec!["find".into(), path.clone()];
@@ -157,9 +237,18 @@ fn ssh_call(host: &str, cmd: &Command) {
             v
         }
     };
-    let cmdline: String = args.iter().map(|a| format!("'{}'", a.replace('\'', "'\\''"))).collect::<Vec<_>>().join(" ");
+    let cmdline: String = args
+        .iter()
+        .map(|a| format!("'{}'", a.replace('\'', "'\\''")))
+        .collect::<Vec<_>>()
+        .join(" ");
     let status = std::process::Command::new("ssh")
-        .args(["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"])
+        .args([
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+        ])
         .arg(host)
         .arg(format!("ws {}", cmdline))
         .status()
@@ -179,7 +268,14 @@ fn command_route(cmd: &Command) -> (&'static str, serde_json::Value) {
     match cmd {
         Command::Read { path } => ("read", json!({ "path": path })),
         Command::Bash { command } => ("bash", json!({ "command": command })),
-        Command::Edit { path, old_text, new_text } => ("edit", json!({ "path": path, "edits": [{"old_text": old_text, "new_text": new_text}] })),
+        Command::Edit {
+            path,
+            old_text,
+            new_text,
+        } => (
+            "edit",
+            json!({ "path": path, "edits": [{"old_text": old_text, "new_text": new_text}] }),
+        ),
         Command::Write { path, content } => ("write", json!({ "path": path, "content": content })),
         Command::Grep { pattern, path } => ("grep", json!({ "pattern": pattern, "path": path })),
         Command::Find { path, name } => ("find", json!({ "path": path, "name": name })),
@@ -189,8 +285,19 @@ fn command_route(cmd: &Command) -> (&'static str, serde_json::Value) {
         Command::Status { session_id } => ("status", json!({ "session_id": session_id })),
         Command::Kill { session_id } => ("kill", json!({ "session_id": session_id })),
         Command::Diagnose { path } => ("lsp/diagnose", json!({ "path": path })),
-        Command::Lsp { method, path, line, column } => ("lsp/request", json!({ "method": method, "path": path, "line": line, "column": column })),
-        Command::Git { args } => ("bash", json!({ "command": format!("git {}", args.join(" ")) })),
+        Command::Lsp {
+            method,
+            path,
+            line,
+            column,
+        } => (
+            "lsp/request",
+            json!({ "method": method, "path": path, "line": line, "column": column }),
+        ),
+        Command::Git { args } => (
+            "bash",
+            json!({ "command": format!("git {}", args.join(" ")) }),
+        ),
         Command::Sessions => ("sessions", json!({})),
         Command::LspSessions => ("lsp-sessions", json!({})),
         Command::Pkg { .. } | Command::Serve { .. } | Command::Mcp => unreachable!(),
