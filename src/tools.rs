@@ -561,7 +561,8 @@ pub async fn fs_tree(path: &str, depth: u32) -> Result<FsTreeResult, ToolError> 
     // ponytail: find with -maxdepth, filters hidden + node_modules + target
     let output = Command::new("find")
         .arg(canonical.as_os_str())
-        .arg("-maxdepth").arg(depth.to_string())
+        .arg("-maxdepth")
+        .arg(depth.to_string())
         .args(["-not", "-path", "*/.git/*"])
         .args(["-not", "-path", "*/node_modules/*"])
         .args(["-not", "-path", "*/target/*"])
@@ -580,13 +581,18 @@ pub async fn fs_tree(path: &str, depth: u32) -> Result<FsTreeResult, ToolError> 
             let rel = l.strip_prefix(&root_str)?.trim_start_matches('/');
             let is_dir = p.is_dir();
             let size = if is_dir { 0 } else { p.metadata().ok()?.len() };
-            Some(FsEntry { path: rel.to_string(), is_dir, size })
+            Some(FsEntry {
+                path: rel.to_string(),
+                is_dir,
+                size,
+            })
         })
         .collect();
-    entries.sort_by(|a, b| {
-        a.is_dir.cmp(&b.is_dir).reverse().then(a.path.cmp(&b.path))
-    });
-    Ok(FsTreeResult { root: root_str, entries })
+    entries.sort_by(|a, b| a.is_dir.cmp(&b.is_dir).reverse().then(a.path.cmp(&b.path)));
+    Ok(FsTreeResult {
+        root: root_str,
+        entries,
+    })
 }
 
 pub async fn fs_diff() -> Result<FsDiffResult, ToolError> {
@@ -653,12 +659,19 @@ pub async fn fs_status() -> Result<FsStatusResult, ToolError> {
     let changes: Vec<FsChange> = stdout
         .lines()
         .filter_map(|l| {
-            if l.len() < 4 { return None; }
+            if l.len() < 4 {
+                return None;
+            }
             let status = l[..2].trim().to_string();
             let rest = l[3..].trim_start();
             let path = rest.split(" -> ").last().unwrap_or(rest).to_string();
             Some(FsChange { path, status })
         })
         .collect();
-    Ok(FsStatusResult { branch, branches, changes, ignored_patterns })
+    Ok(FsStatusResult {
+        branch,
+        branches,
+        changes,
+        ignored_patterns,
+    })
 }

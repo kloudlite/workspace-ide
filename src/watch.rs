@@ -91,7 +91,10 @@ pub fn start_watch(root: &str) {
             if reconcile_counter % 300 == 0 {
                 let (added, removed) = lsp::reconcile_lsp();
                 if added > 0 || removed > 0 {
-                    eprintln!("ws: LSP reconcile — installed {}, uninstalled {}", added, removed);
+                    eprintln!(
+                        "ws: LSP reconcile — installed {}, uninstalled {}",
+                        added, removed
+                    );
                 }
             }
 
