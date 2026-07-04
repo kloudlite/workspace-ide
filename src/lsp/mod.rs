@@ -490,6 +490,70 @@ pub fn list_sessions() -> Vec<(String, String)> {
         .collect()
 }
 
+/// Scan workspace for files with known LSP extensions, call f for each match.
+pub fn walk_files(dir: &Path, f: &mut dyn FnMut(&Path)) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with('.') || name == "node_modules" || name == "target" {
+                    continue;
+                }
+            }
+            walk_files(&path, f);
+            continue;
+        }
+        if !path.is_file() {
+            continue;
+        }
+        let path_str = path.to_string_lossy().to_string();
+        let ext = extension_for(&path_str);
+        if ext.is_empty() || server::for_extension(&ext).is_empty() {
+            continue;
+        }
+        f(&path);
+    }
+}
+
+/// Install missing LSP servers, uninstall unused ones.
+/// ponytail: called every ~10min from watch loop.
+pub fn reconcile_lsp() -> (usize, usize) {
+    use std::collections::HashSet;
+    let mut needed = HashSet::new();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    walk_files(&cwd, &mut |p| {
+        let ext = extension_for(&p.to_string_lossy());
+        for svr in server::for_extension(&ext) {
+            needed.insert(svr.binary);
+        }
+    });
+    let mut installed_count = 0;
+    let mut uninstalled = 0;
+    for svr in server::SERVERS {
+        let on_path = std::process::Command::new("which")
+            .arg(svr.binary)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if needed.contains(svr.binary) {
+            if !on_path {
+                eprintln!("ws: installing LSP: {}", svr.binary);
+                let _ = crate::nix::install(svr.binary);
+                installed_count += 1;
+            }
+        } else if on_path {
+            eprintln!("ws: uninstalling unused LSP: {}", svr.binary);
+            let _ = crate::nix::remove(svr.binary);
+            uninstalled += 1;
+        }
+    }
+    (installed_count, uninstalled)
+}
+
 pub fn cleanup_idle() -> usize {
     let mut s = state().lock().unwrap();
     let now = Instant::now();

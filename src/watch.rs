@@ -1,4 +1,5 @@
 use crate::lsp;
+use crate::lsp::walk_files;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -67,16 +68,25 @@ pub fn start_watch(root: &str) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let rt = tokio::runtime::Handle::current();
         let mut cleanup_counter = 0u32;
+        let mut reconcile_counter = 0u64;
 
         loop {
             std::thread::sleep(Duration::from_millis(2000));
 
             cleanup_counter += 1;
+            reconcile_counter += 1;
             if cleanup_counter >= 15 {
                 cleanup_counter = 0;
                 let killed = lsp::cleanup_idle();
                 if killed > 0 {
                     eprintln!("ws: cleaned up {} idle LSP session(s)", killed);
+                }
+            }
+            // ponytail: reconcile every ~10min (300 ticks × 2s)
+            if reconcile_counter % 300 == 0 {
+                let (added, removed) = lsp::reconcile_lsp();
+                if added > 0 || removed > 0 {
+                    eprintln!("ws: LSP reconcile — installed {}, uninstalled {}", added, removed);
                 }
             }
 
@@ -127,35 +137,6 @@ fn severity_label(s: u8) -> &'static str {
     ["", "ERROR", "WARN", "INFO", "HINT"]
         .get(s as usize)
         .unwrap_or(&"?")
-}
-
-// ponytail: single shared walk, replaces duplicate do_scan + walk_dir
-fn walk_files(dir: &Path, f: &mut dyn FnMut(&Path)) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') || name == "node_modules" || name == "target" {
-                    continue;
-                }
-            }
-            walk_files(&path, f);
-            continue;
-        }
-        if !path.is_file() {
-            continue;
-        }
-        let path_str = path.to_string_lossy().to_string();
-        let ext = lsp::extension_for(&path_str);
-        if ext.is_empty() || lsp::server::for_extension(&ext).is_empty() {
-            continue;
-        }
-        f(&path);
-    }
 }
 
 fn initial_scan(root: &Path) -> (HashMap<String, SystemTime>, Vec<(String, String)>) {
