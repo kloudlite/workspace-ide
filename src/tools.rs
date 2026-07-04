@@ -89,6 +89,8 @@ pub struct FsEntry {
     pub path: String,
     pub is_dir: bool,
     pub size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
 }
 
 #[derive(Debug)]
@@ -512,7 +514,7 @@ pub async fn list_dir(path: &str) -> Result<LsResult, ToolError> {
 
 // --- FS API: tree + git status ---
 
-pub async fn fs_tree(path: &str, depth: u32) -> Result<FsTreeResult, ToolError> {
+pub async fn fs_tree(path: &str, depth: u32, include_content: bool) -> Result<FsTreeResult, ToolError> {
     let canonical = std::path::Path::new(path)
         .canonicalize()
         .unwrap_or_else(|_| std::path::PathBuf::from(path));
@@ -538,7 +540,12 @@ pub async fn fs_tree(path: &str, depth: u32) -> Result<FsTreeResult, ToolError> 
             let rel = l.strip_prefix(&root_str)?.trim_start_matches('/');
             let is_dir = p.is_dir();
             let size = if is_dir { 0 } else { p.metadata().ok()?.len() };
-            Some(FsEntry { path: rel.to_string(), is_dir, size })
+            let content = if include_content && !is_dir && size < 102400 {
+                std::fs::read_to_string(l).ok()
+            } else {
+                None
+            };
+            Some(FsEntry { path: rel.to_string(), is_dir, size, content })
         })
         .collect();
     entries.sort_by(|a, b| {

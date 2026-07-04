@@ -244,7 +244,8 @@ async fn fs_tree_handler(
 ) -> Result<Json<tools::FsTreeResult>, (StatusCode, Json<ErrorResponse>)> {
     let path = req.get("path").and_then(|v| v.as_str()).unwrap_or(".");
     let depth = req.get("depth").and_then(|v| v.as_u64()).unwrap_or(2) as u32;
-    tools::fs_tree(path, depth.min(5))
+    let include_content = req.get("include_content").and_then(|v| v.as_bool()).unwrap_or(false);
+    tools::fs_tree(path, depth.min(5), include_content)
         .await
         .map(Json)
         .map_err(|e| err(StatusCode::BAD_REQUEST, e.0))
