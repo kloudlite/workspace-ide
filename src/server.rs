@@ -37,6 +37,10 @@ pub fn router() -> Router {
         .route("/status", post(status_handler))
         .route("/kill", post(kill_handler))
         .route("/sessions", get(sessions_handler))
+        .route("/pkg/install", post(pkg_install_handler))
+        .route("/pkg/search", post(pkg_search_handler))
+        .route("/pkg/list", post(pkg_list_handler))
+        .route("/pkg/remove", post(pkg_remove_handler))
         .route("/lsp/diagnose", post(lsp_diagnose_handler))
         .route("/lsp/sessions", get(lsp_sessions_handler))
         .route("/lsp/request", post(lsp_request_handler))
@@ -160,6 +164,46 @@ async fn kill_handler(
 
 async fn sessions_handler() -> Json<Vec<tools::StatusResult>> {
     Json(tools::list_sessions().await)
+}
+
+// --- Package management handlers ---
+
+async fn pkg_install_handler(
+    Json(req): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    let package = get_str(&req, "package")?;
+    match crate::nix::install(package) {
+        Ok(msg) => Ok(Json(serde_json::json!({ "ok": true, "msg": msg }))),
+        Err(e) => Err(err(StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+async fn pkg_search_handler(
+    Json(req): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    let query = get_str(&req, "query")?;
+    match crate::nix::search(query) {
+        Ok(results) => Ok(Json(serde_json::json!({ "packages": results }))),
+        Err(e) => Err(err(StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+async fn pkg_list_handler(
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    match crate::nix::list() {
+        Ok(results) => Ok(Json(serde_json::json!({ "packages": results }))),
+        Err(e) => Err(err(StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+async fn pkg_remove_handler(
+    Json(req): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    let package = get_str(&req, "package")?;
+    match crate::nix::remove(package) {
+        Ok(msg) => Ok(Json(serde_json::json!({ "ok": true, "msg": msg }))),
+        Err(e) => Err(err(StatusCode::BAD_REQUEST, e)),
+    }
 }
 
 // --- LSP handlers ---

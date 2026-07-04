@@ -91,6 +91,13 @@ pub async fn run_bash(command: &str, timeout_secs: Option<u64>) -> BashResult {
     let mut child = Command::new("sh");
     child.arg("-c").arg(command);
     child.stdout(Stdio::piped()).stderr(Stdio::piped());
+    // ponytail: include nix user profile bin so pkg_install'd tools are on PATH
+    if let Ok(home) = std::env::var("HOME") {
+        let nix_bin = format!("{}/.local/state/nix/profile/bin", home);
+        if let Ok(existing) = std::env::var("PATH") {
+            child.env("PATH", format!("{}:{}", nix_bin, existing));
+        }
+    }
 
     let output = match timeout_secs {
         Some(secs) => {
@@ -301,13 +308,17 @@ pub async fn spawn_bash(command: &str) -> Result<SpawnResult, ToolError> {
     let log_dir = std::env::temp_dir().join(format!("ws-{}", session_id));
     tokio::fs::create_dir_all(&log_dir).await?;
 
-    let mut child = tokio::process::Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| ToolError(format!("failed to spawn: {}", e)))?;
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.arg("-c").arg(command);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    // ponytail: same nix PATH fix as run_bash
+    if let Ok(home) = std::env::var("HOME") {
+        let nix_bin = format!("{}/.local/state/nix/profile/bin", home);
+        if let Ok(existing) = std::env::var("PATH") {
+            cmd.env("PATH", format!("{}:{}", nix_bin, existing));
+        }
+    }
+    let mut child = cmd.spawn().map_err(|e| ToolError(format!("failed to spawn: {}", e)))?;
 
     let pid = child.id().unwrap_or(0);
 

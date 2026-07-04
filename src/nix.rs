@@ -8,11 +8,34 @@ use std::process::Command;
 const NIX_BIN: &str = "/nix/var/nix/profiles/default/bin/nix";
 const NIX_PROFILE_BIN: &str = "/nix/var/nix/profiles/default/bin";
 
+/// Ensure Nix is available and user profile symlink is valid.
+/// Called at server startup.
 pub fn setup_env() {
     if let Ok(current) = std::env::var("PATH") {
         if !current.contains(NIX_PROFILE_BIN) {
             let new_path = format!("{}:{}", NIX_PROFILE_BIN, current);
             std::env::set_var("PATH", &new_path);
+        }
+    }
+    // Fix user nix profile symlink — point to profiles/profile so nix's own
+    // updates (from `nix profile add`) propagate automatically.
+    // The with-s link (~/.local/state/nix/profiles/profile) is updated by nix;
+    // the without-s link (~/.local/state/nix/profile) is stale at container build.
+    if let Ok(home) = std::env::var("HOME") {
+        let profile_link = format!("{}/.local/state/nix/profile", home);
+        let profiles_profile = format!("{}/.local/state/nix/profiles/profile", home);
+        match std::fs::read_link(&profile_link) {
+            Ok(current) if current.to_string_lossy() == profiles_profile => {}
+            _ => {
+                let _ = std::fs::remove_file(&profile_link);
+                let _ = std::os::unix::fs::symlink(&profiles_profile, &profile_link);
+            }
+        }
+        // Also add user nix profile bin to PATH so installed tools are found
+        let user_nix_bin = format!("{}/.local/state/nix/profile/bin", home);
+        let current = std::env::var("PATH").unwrap_or_default();
+        if !current.contains(&user_nix_bin) {
+            std::env::set_var("PATH", format!("{}:{}", user_nix_bin, current));
         }
     }
 }
@@ -51,7 +74,7 @@ fn install_one(flake: &str, pkg: &str) -> Result<String, String> {
     let attr = format!("{}#{}", flake, pkg);
     eprintln!("ws: nix installing {}...", attr);
     let output = nix_cmd()?
-        .args(["profile", "install", &attr])
+        .args(["profile", "add", &attr])
         .output()
         .map_err(|e| format!("nix install: {}", e))?;
     if output.status.success() {
@@ -74,7 +97,7 @@ fn install_version(name: &str, version: &str) -> Result<String, String> {
     for attr in &candidates {
         eprintln!("ws: trying {}...", attr);
         let output = nix_cmd()?
-            .args(["profile", "install", attr])
+            .args(["profile", "add", attr])
             .output()
             .map_err(|e| format!("nix install: {}", e))?;
         if output.status.success() {
@@ -105,15 +128,26 @@ pub fn sync() -> Result<String, String> {
 }
 
 pub fn search(query: &str) -> Result<Vec<String>, String> {
-    // ponytail: nix search CLI only — removes HTTP API dep + urlencoding
     let output = nix_cmd()?
         .args(["search", "nixpkgs", query])
         .output()
         .map_err(|e| format!("nix search: {}", e))?;
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(|l| l.to_string())
-        .collect())
+    // ponytail: strip ANSI escape codes from nix search output
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let mut cleaned = String::with_capacity(raw.len());
+    let mut in_escape = false;
+    for ch in raw.chars() {
+        if in_escape {
+            if ch == 'm' {
+                in_escape = false;
+            }
+        } else if ch == '\x1b' {
+            in_escape = true;
+        } else {
+            cleaned.push(ch);
+        }
+    }
+    Ok(cleaned.lines().map(|l| l.to_string()).collect())
 }
 
 pub fn list() -> Result<Vec<String>, String> {
