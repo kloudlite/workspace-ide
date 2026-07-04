@@ -1,0 +1,21 @@
+{
+  "name": "@ws-harness/harness",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "ws-pi": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "echo noop"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.49"
+  }
+}
