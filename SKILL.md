@@ -33,7 +33,8 @@ ws find <path> [--name <glob>]    # Find files matching a glob
 
 ```bash
 ws bash "<command>"               # Short-lived shell command (blocks until done)
-ws git <args>                     # Run git commands (use -- before flags like --global)
+ws fs status [path]                # Show git status for a directory (branch, changes, ignored patterns)
+ws fs diff                         # Show git diff (unstaged + staged separately)
 ```
 
 ### Background Sessions
