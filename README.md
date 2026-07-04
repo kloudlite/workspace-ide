@@ -1,38 +1,88 @@
 # ws — headless IDE
 
-Remote IDE server with HTTP API, CLI client, and an AI agent harness (`ws-pi`) backed by [pi](https://github.com/earendil-works/pi-coding-agent).
-
-## Quick start
-
-```bash
-# Server (inside container or VM)
-cargo build --release && ./target/release/ws serve
-
-# CLI client
-ws read src/main.rs
-ws bash "cargo build"
-ws pkg install ripgrep
-
-# AI agent (harness)
-cd harness && npm install && npm run build && npm link
-ws-pi --server http://host:8321
-```
+Remote IDE server with an AI agent harness (`ws-pi`) powered by [pi](https://github.com/earendil-works/pi-coding-agent). Also ships a standalone CLI.
 
 ## AI agent harness (`ws-pi`)
 
-The `harness/` directory contains `ws-pi` — a pi-compatible harness that routes all tool calls to the ws server over HTTP. It boots pi's InteractiveMode TUI with 18 remote tools (read, bash, edit, write, grep, find, ls, spawn, logs, status, kill, sessions, lsp, diagnose, pkg_install, pkg_search, pkg_list, pkg_remove) plus a remote-bash extension for `!` commands and `@` file autocomplete.
+`ws-pi` boots pi's full InteractiveMode TUI with every tool routed to the remote ws server over HTTP. You get the pi experience — code editing, shell, LSP, package management — backed by a remote workspace, not your local filesystem.
+
+```
+┌─ ws-pi ──────────────────────────────────┐
+│  ┌─ pi TUI ──────────────────────────┐   │
+│  │  read bash edit write grep find   │   │    HTTP     ┌──────────┐
+│  │  ls spawn logs kill lsp pkg_*     │───│───────────│ ws serve │
+│  │  !commands  @file-autocomplete    │   │    :8321   └──────────┘
+│  └───────────────────────────────────┘   │
+└──────────────────────────────────────────┘
+```
+
+### Setup
 
 ```bash
 cd harness && npm install && npm run build && npm link
-ws-pi --server http://kmac.khost.dev:8321   # interactive
-ws-pi --server http://host:8321 "fix the lint errors"   # single-shot
-ws-pi --new                       # fresh session
-ws-pi --list                      # list past sessions
 ```
 
-Skill docs: [harness/skills/ws-harness/SKILL.md](harness/skills/ws-harness/SKILL.md)
+### Usage
 
-## CLI
+```bash
+ws-pi --server http://host:8321                    # interactive TUI
+ws-pi --server http://host:8321 "fix the errors"   # single-shot print mode
+ws-pi --new                                        # fresh session
+ws-pi --session <path>                             # open specific session
+ws-pi --list                                       # list past sessions
+```
+
+Sessions are persisted in `~/.ws-sessions/<hash-of-server-url>/` — each server connection gets isolated session history. Default: continues the most recent session.
+
+### 18 remote tools
+
+All tool calls are HTTP requests to the ws server. No local filesystem access.
+
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `read` | `/read` | Read a file |
+| `bash` | `/bash` | Run shell command (short-lived; see spawn) |
+| `edit` | `/edit` | Edit file by exact text replacement |
+| `write` | `/write` | Write/create file |
+| `grep` | `/grep` | Recursive pattern search |
+| `find` | `/find` | Find files by name |
+| `ls` | `/ls` | List directory |
+| `spawn` | `/spawn` | Background process |
+| `logs` | `/logs` | Get spawn output |
+| `status` | `/status` | Check spawn status |
+| `kill` | `/kill` | Kill spawn (kills process group, no orphans) |
+| `sessions` | `/sessions` | List all background sessions |
+| `lsp` | `/lsp/request` | LSP hover/definition/references/completion |
+| `diagnose` | `/lsp/diagnose` | LSP diagnostics for a file |
+| `pkg_install` | `/pkg/install` | Install a package |
+| `pkg_search` | `/pkg/search` | Search packages |
+| `pkg_list` | `/pkg/list` | List installed packages |
+| `pkg_remove` | `/pkg/remove` | Uninstall a package |
+
+### Remote extension
+
+`harness/src/extensions/remote-bash.ts` adds three features inside the pi TUI:
+
+- **`!command`** — inline bash: type `!cargo build` and it runs on the server, output streams back
+- **`@` autocomplete** — file path completion from the remote workspace (`@src/m` → `src/main.rs`)
+- **Clipboard images** — paste screenshots, injected as base64 into the message
+
+### Escape / interrupt
+
+Pressing Escape in `ws-pi` cancels inflight tool calls. The harness passes `AbortSignal` to every `fetch`, and the ws server kills the child process group on disconnect — no orphaned dev servers holding ports. Background sessions (`spawn`) are killed via process group (`kill -TERM -<pid>`), not just the shell.
+
+---
+
+## Standalone CLI
+
+The `ws` binary also works as a standalone CLI. Sends HTTP requests to the server.
+
+```bash
+ws --server http://host:8321 read src/main.rs
+ws --server http://host:8321 bash "cargo build"
+WS_SERVER_URL=http://host:8321 ws read file.go
+ws --ssh user@host read file.go   # tunnel via SSH
+```
 
 | Category | Commands |
 |----------|----------|
@@ -41,18 +91,12 @@ Skill docs: [harness/skills/ws-harness/SKILL.md](harness/skills/ws-harness/SKILL
 | Background | `spawn`, `logs`, `status`, `kill`, `sessions` |
 | LSP | `diagnose`, `lsp <method> <path> <line> <col>`, `lsp-sessions` |
 | Packages | `pkg install`, `search`, `list`, `remove`, `apply`, `sync` |
+| FS / Git | `ws fs tree <path>`, `ws fs status`, `ws fs diff` |
 | MCP | `ws mcp` (JSON-RPC over stdio) |
-| Git | `ws fs status`, `ws fs diff` |
 
-Full reference: [SKILL.md](SKILL.md)
+Full CLI reference: [SKILL.md](SKILL.md)
 
-## Connecting
-
-```bash
-ws --server http://host:8321 read file.go
-WS_SERVER_URL=http://host:8321 ws read file.go
-ws --ssh user@host read file.go  # tunnel via SSH
-```
+---
 
 ## Server
 
@@ -61,7 +105,9 @@ ws serve              # listens on :8321
 ws serve -p 3000      # custom port
 ```
 
-HTTP API mirrors the CLI: `POST /read`, `POST /bash`, `POST /edit`, etc. All requests accept `AbortSignal` — pressing Escape in `ws-pi` cancels inflight operations and kills the server-side process tree.
+HTTP API mirrors the CLI tool-for-tool.
+
+---
 
 ## Package management
 
@@ -71,12 +117,14 @@ Packages are installed via the host's package manager. `ws.yaml` tracks user-ins
 ws pkg install go        # install
 ws pkg list              # show installed
 ws pkg remove go         # uninstall
-ws pkg apply             # restore from ws.yaml (runs on server boot)
+ws pkg apply             # restore from ws.yaml (runs on server boot too)
 ```
+
+---
 
 ## LSP
 
-Nine language servers, auto-started on file access:
+Nine language servers, auto-started on file access. LSP deps auto-installed and cleaned up (~10min reconcile cycle).
 
 | Language | Server |
 |----------|--------|
@@ -90,12 +138,16 @@ Nine language servers, auto-started on file access:
 | YAML | yaml-language-server |
 | JSON | json-languageserver |
 
+---
+
 ## Build
 
 ```bash
-cargo build --release        # Rust server
-cd harness && npm run build   # AI harness
+cargo build --release          # Rust server
+cd harness && npm run build     # AI agent harness
 ```
+
+---
 
 ## Docker
 
