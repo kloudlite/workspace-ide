@@ -237,7 +237,9 @@ pub fn apply_yaml() -> Result<String, String> {
     let current = list().unwrap_or_default();
     let mut installed = Vec::new();
     for pkg in &desired {
-        if current.contains(pkg) {
+        // ponytail: pkg may be "go@1.23.4" — list() returns bare names
+        let name = pkg.split_once('@').map(|(n, _)| n).unwrap_or(pkg);
+        if current.iter().any(|c| c == name) {
             eprintln!("ws: {} already installed", pkg);
         } else {
             match install(pkg) {
@@ -263,7 +265,12 @@ fn write_workspace_files() -> Result<(), String> {
             continue;
         }
         let version = extract_version(store_path);
-        yaml_pkgs.push(format!("  - {}", name));
+        let yaml_entry = if version.is_empty() {
+            format!("  - {}", name)
+        } else {
+            format!("  - {}@{}", name, version)
+        };
+        yaml_pkgs.push(yaml_entry);
         lock_pkgs.push(format!(
             "  {}:\n      version: \"{}\"\n      store: \"{}\"",
             name, version, store_path
