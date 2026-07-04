@@ -494,9 +494,10 @@ pub async fn kill_session(session_id: &str) -> Result<KillResult, ToolError> {
         });
     }
 
-    // ponytail: kill process group (negative pid) so grandchildren die too
-    let status = tokio::process::Command::new("kill")
-        .arg(format!("-{}", pid))
+    // ponytail: kill process group via shell (kill is a builtin, no binary)
+    let status = tokio::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("kill -TERM -{}", pid))
         .status()
         .await
         .map_err(|e| ToolError(format!("kill failed: {}", e)))?;
