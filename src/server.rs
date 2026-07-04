@@ -253,6 +253,8 @@ async fn fs_tree_handler(
 async fn fs_status_handler() -> Json<tools::FsStatusResult> {
     Json(tools::fs_status().await.unwrap_or(tools::FsStatusResult {
         branch: String::new(),
+        branches: vec![],
         changes: vec![],
+        ignored_count: 0,
     }))
 }

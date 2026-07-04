@@ -67,7 +67,9 @@ pub struct LsResult {
 #[derive(Serialize)]
 pub struct FsStatusResult {
     pub branch: String,
+    pub branches: Vec<String>,
     pub changes: Vec<FsChange>,
+    pub ignored_count: usize,
 }
 
 #[derive(Serialize)]
@@ -554,6 +556,29 @@ pub async fn fs_status() -> Result<FsStatusResult, ToolError> {
         .await
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
+    // ponytail: local branches only
+    let branches: Vec<String> = Command::new("git")
+        .args(["branch", "--format=%(refname:short)"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    let ignored_count = Command::new("git")
+        .args(["ls-files", "--others", "--ignored", "--exclude-standard"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .map(|o| String::from_utf8_lossy(&o.stdout).lines().count())
+        .unwrap_or(0);
     let output = Command::new("git")
         .args(["status", "--porcelain"])
         .stdout(Stdio::piped())
@@ -572,5 +597,5 @@ pub async fn fs_status() -> Result<FsStatusResult, ToolError> {
             Some(FsChange { path, status })
         })
         .collect();
-    Ok(FsStatusResult { branch, changes })
+    Ok(FsStatusResult { branch, branches, changes, ignored_count })
 }
