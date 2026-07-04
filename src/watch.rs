@@ -123,112 +123,78 @@ pub fn start_watch(root: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Walk project, collect mtimes + one sample file per extension
+// ponytail: single shared walk, replaces duplicate do_scan + walk_dir
+fn walk_files(dir: &Path, f: &mut dyn FnMut(&Path)) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with('.') || name == "node_modules" || name == "target" {
+                    continue;
+                }
+            }
+            walk_files(&path, f);
+            continue;
+        }
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{}", e))
+            .unwrap_or_default();
+        let ext = if ext == "." && path.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
+            "Dockerfile".to_string()
+        } else {
+            ext
+        };
+        if ext.is_empty() || lsp::server::for_extension(&ext).is_empty() {
+            continue;
+        }
+        f(&path);
+    }
+}
+
 fn initial_scan(root: &Path) -> (HashMap<String, SystemTime>, Vec<(String, String)>) {
     let mut mtimes = HashMap::new();
     let mut seen_exts = HashSet::new();
     let mut samples = Vec::new();
-    do_scan(root, &mut mtimes, &mut seen_exts, &mut samples);
+    walk_files(root, &mut |path| {
+        let path_str = path.to_string_lossy().to_string();
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let ext = if ext.is_empty() && path.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
+            "Dockerfile"
+        } else {
+            ext
+        };
+        if let Ok(meta) = path.metadata() {
+            if let Ok(mtime) = meta.modified() {
+                mtimes.insert(path_str.clone(), mtime);
+            }
+        }
+        if seen_exts.insert(ext.to_string()) {
+            samples.push((ext.to_string(), path_str));
+        }
+    });
     (mtimes, samples)
 }
 
-fn do_scan(
-    dir: &Path,
-    mtimes: &mut HashMap<String, SystemTime>,
-    seen_exts: &mut HashSet<String>,
-    samples: &mut Vec<(String, String)>,
-) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') || name == "node_modules" || name == "target" {
-                    continue;
-                }
-            }
-            do_scan(&path, mtimes, seen_exts, samples);
-            continue;
-        }
-        if !path.is_file() {
-            continue;
-        }
-
-        let path_str = path.to_string_lossy().to_string();
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| format!(".{}", e))
-            .unwrap_or_default();
-        let ext = if ext == "." && path.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
-            "Dockerfile".to_string()
-        } else {
-            ext
-        };
-
-        if ext.is_empty() || lsp::server::for_extension(&ext).is_empty() {
-            continue;
-        }
-
-        if let Ok(meta) = path.metadata() {
-            if let Ok(mtime) = meta.modified() {
-                mtimes.insert(path_str, mtime);
-            }
-        }
-
-        if seen_exts.insert(ext.clone()) {
-            samples.push((ext, path.to_string_lossy().to_string()));
-        }
-    }
-}
-
 fn walk_dir(dir: &Path, mtimes: &mut HashMap<String, SystemTime>, changed: &mut Vec<String>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') || name == "node_modules" || name == "target" {
-                    continue;
-                }
-            }
-            walk_dir(&path, mtimes, changed);
-            continue;
-        }
-        if !path.is_file() {
-            continue;
-        }
-
+    walk_files(dir, &mut |path| {
         let path_str = path.to_string_lossy().to_string();
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| format!(".{}", e))
-            .unwrap_or_default();
-        let ext = if ext == "." && path.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
-            "Dockerfile".to_string()
-        } else {
-            ext
-        };
-        if ext.is_empty() || lsp::server::for_extension(&ext).is_empty() {
-            continue;
-        }
-
         let meta = match path.metadata() {
             Ok(m) => m,
-            Err(_) => continue,
+            Err(_) => return,
         };
         let mtime = match meta.modified() {
             Ok(t) => t,
-            Err(_) => continue,
+            Err(_) => return,
         };
-
         let prev = mtimes.get(&path_str).copied();
         if prev.map(|p| p != mtime).unwrap_or(true) {
             if prev.is_some() {
@@ -236,5 +202,5 @@ fn walk_dir(dir: &Path, mtimes: &mut HashMap<String, SystemTime>, changed: &mut 
             }
             mtimes.insert(path_str, mtime);
         }
-    }
+    });
 }

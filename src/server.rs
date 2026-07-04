@@ -7,13 +7,20 @@ use axum::{
 use serde::Serialize;
 use serde_json::Value;
 
-macro_rules! field {
-    ($req:expr, $name:expr) => {
-        $req.get($name).and_then(|v| v.as_str()).ok_or_else(|| {
-            let s = format!("missing field: {}", $name);
-            (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: s }))
-        })
-    };
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: String,
+}
+
+fn err(status: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
+    (status, Json(ErrorResponse { error: msg.into() }))
+}
+
+fn get_str<'a>(v: &'a Value, key: &str) -> Result<&'a str, (StatusCode, Json<ErrorResponse>)> {
+    v.get(key).and_then(|v| v.as_str()).ok_or_else(|| {
+        let s = format!("missing field: {}", key);
+        (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: s }))
+    })
 }
 
 pub fn router() -> Router {
@@ -32,19 +39,7 @@ pub fn router() -> Router {
         .route("/sessions", get(sessions_handler))
         .route("/lsp/diagnose", post(lsp_diagnose_handler))
         .route("/lsp/sessions", get(lsp_sessions_handler))
-}
-
-#[derive(Serialize)]
-struct ErrorResponse {
-    error: String,
-}
-
-fn err(status: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
-    (status, Json(ErrorResponse { error: msg.into() }))
-}
-
-fn get_str<'a>(v: &'a Value, key: &str) -> Result<&'a str, (StatusCode, Json<ErrorResponse>)> {
-    field!(v, key)
+        .route("/lsp/request", post(lsp_request_handler))
 }
 
 async fn read_handler(
@@ -181,4 +176,30 @@ async fn lsp_diagnose_handler(
 
 async fn lsp_sessions_handler() -> Json<Value> {
     Json(serde_json::json!(lsp::list_sessions()))
+}
+
+async fn lsp_request_handler(
+    Json(req): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    let method = get_str(&req, "method")?;
+    let path = get_str(&req, "path")?;
+    let line = req.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    let col = req.get("column").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    let params = serde_json::json!({
+        "textDocument": { "uri": format!("file://{}", path) },
+        "position": { "line": line, "character": col },
+    });
+    let params = if method.ends_with("/references") {
+        serde_json::json!({
+            "textDocument": { "uri": format!("file://{}", path) },
+            "position": { "line": line, "character": col },
+            "context": { "includeDeclaration": true },
+        })
+    } else {
+        params
+    };
+    lsp::lsp_request(path, method, params)
+        .await
+        .map(Json)
+        .map_err(|e| err(StatusCode::BAD_REQUEST, e))
 }

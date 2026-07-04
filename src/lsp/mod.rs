@@ -2,12 +2,14 @@ pub mod server;
 
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 use std::time::Instant;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, ChildStdin, Command};
 
-// ponytail: ensure binary via which() + nix fallback, no custom download logic
+// ponytail: which() + nix fallback, no custom download
 fn ensure_binary(binary: &str) -> Result<String, String> {
     if let Ok(out) = std::process::Command::new("which").arg(binary).output() {
         if out.status.success() {
@@ -39,7 +41,7 @@ pub struct Diagnostic {
     pub code: Option<String>,
 }
 
-const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 struct Session {
@@ -64,16 +66,196 @@ fn state() -> &'static Mutex<LspState> {
     })
 }
 
-pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
-    let ext = match Path::new(file_path).extension() {
+fn extension_for(path: &str) -> String {
+    let ext = match Path::new(path).extension() {
         Some(e) => format!(".{}", e.to_string_lossy()),
-        None => return Ok(vec![]),
+        None => return String::new(),
     };
-    let ext = if ext == "." && file_path.ends_with("Dockerfile") {
+    if ext == "." && path.ends_with("Dockerfile") {
         "Dockerfile".to_string()
     } else {
         ext
-    };
+    }
+}
+
+
+
+/// Open a file in the LSP session (textDocument/didOpen).
+async fn send_did_open(
+    stdin: &mut ChildStdin,
+    path: &str,
+    language_id: &str,
+    content: &str,
+) {
+    write_msg(
+        stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": format!("file://{}", path),
+                    "languageId": language_id,
+                    "version": 1,
+                    "text": content,
+                }
+            }
+        }),
+    )
+    .await;
+}
+
+/// Send a JSON-RPC request to an LSP server and wait for the response.
+/// Fresh process per request (no session caching). Uses blocking I/O to match Python-test behavior.
+static NEXT_REQ_ID: AtomicU64 = AtomicU64::new(2);
+
+pub async fn lsp_request(
+    file_path: &str,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let ext = extension_for(file_path);
+    let servers = server::for_extension(&ext);
+    if servers.is_empty() {
+        return Err(format!("no LSP server for {}", ext));
+    }
+    let svr = servers.into_iter().next().unwrap().clone();
+    let _ = ensure_binary(&svr.binary);
+    for pkg in svr.nix_packages {
+        let _ = crate::nix::install(pkg);
+    }
+    let bin_path = ensure_binary(&svr.binary)?;
+    let root = find_root(file_path, svr.needs_lockfile);
+    let language_id = svr.language_id;
+    let content = tokio::fs::read_to_string(file_path)
+        .await
+        .unwrap_or_default();
+    let id = NEXT_REQ_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    let f_path = file_path.to_string();
+    let method = method.to_string();
+    let params_json = serde_json::to_string(&params).unwrap_or_default();
+
+    // Use std::process::Command (blocking) to avoid tokio pipe bugs
+    tokio::task::spawn_blocking(move || {
+        let mut child = match std::process::Command::new(&bin_path)
+            .args(&*svr.args)
+            .current_dir(&root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => return Err(format!("spawn: {}", e)),
+        };
+        let mut stdin = match child.stdin.take() {
+            Some(s) => s,
+            None => return Err("no stdin".to_string()),
+        };
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => return Err("no stdout".to_string()),
+        };
+
+        use std::io::{Write, Read};
+        let mut w = |msg: &serde_json::Value| {
+            let body = serde_json::to_string(msg).unwrap();
+            let header = format!("Content-Length: {}\r\n\r\n", body.len());
+            stdin.write_all(header.as_bytes()).ok();
+            stdin.write_all(body.as_bytes()).ok();
+            stdin.flush().ok();
+        };
+
+        // Initialize
+        w(&serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"capabilities":{}}}));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        w(&serde_json::json!({"jsonrpc":"2.0","method":"initialized","params":{}}));
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // didOpen
+        w(&serde_json::json!({
+            "jsonrpc":"2.0","method":"textDocument/didOpen",
+            "params":{"textDocument":{"uri":format!("file://{}",f_path),"languageId":language_id,"version":1,"text":content}}
+        }));
+
+        // Parse params from JSON string, then build request
+        let params_val: serde_json::Value = serde_json::from_str(&params_json).unwrap_or(serde_json::Value::Null);
+        w(&serde_json::json!({
+            "jsonrpc":"2.0","id":id,"method":method,"params":params_val
+        }));
+
+        // Keep stdin open. Read one message at a time from stdout.
+        // This gives gopls time to process each request and produce output.
+        // ponytail: no background threads, no oneshot channels. One-byte-at-a-time is
+        // inefficient for large messages but fine for LSP (hover/def/completion are small).
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+
+        /// Read one JSON-RPC message (header + body) from a BufRead.
+        fn read_next<R: Read>(r: &mut std::io::BufReader<R>) -> Option<serde_json::Value> {
+            let mut header = Vec::new();
+            let mut cr = 0;
+            loop {
+                let mut byte = [0u8; 1];
+                r.read_exact(&mut byte).ok()?;
+                match (cr, byte[0]) {
+                    (0, b'\r') => cr = 1,
+                    (1, b'\n') => cr = 2,
+                    (2, b'\r') => cr = 3,
+                    (3, b'\n') => {
+                        if let Ok(s) = std::str::from_utf8(&header[..header.len() - 2]) {
+                            for line in s.lines() {
+                                if let Some(len_str) = line.strip_prefix("Content-Length: ") {
+                                    if let Ok(len) = len_str.trim().parse::<usize>() {
+                                        let mut body = vec![0u8; len];
+                                        r.read_exact(&mut body).ok()?;
+                                        return serde_json::from_slice(&body).ok();
+                                    }
+                                }
+                            }
+                        }
+                        return None;
+                    }
+                    _ => { cr = 0; }
+                }
+                header.push(byte[0]);
+            }
+        }
+
+        let mut reader = std::io::BufReader::new(stdout);
+
+        // Read initialize response
+        let _init_resp = read_next(&mut reader).ok_or("no init response")?;
+
+        // Read messages until we find our response
+        loop {
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            match read_next(&mut reader) {
+                Some(msg) => {
+                    if msg.get("id").and_then(|v| v.as_u64()) == Some(id) {
+                        let _ = child.kill();
+                        return Ok(msg);
+                    }
+                }
+                None => break,
+            }
+        }
+        let _ = child.kill();
+        Err("response not found".to_string())
+    })
+    .await
+    .map_err(|_| "join error".to_string())?
+}
+
+
+
+
+// --- Existing functions (diagnose, server lifecycle) ---
+
+pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
+    let ext = extension_for(file_path);
     let servers = server::for_extension(&ext);
     if servers.is_empty() {
         return Ok(vec![]);
@@ -82,7 +264,6 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
     let mut all_diags = Vec::new();
     for svr in servers {
         let sid = svr.id.to_string();
-        // Ensure binary is available
         let _ = ensure_binary(svr.binary);
         let root = find_root(file_path, svr.needs_lockfile);
 
@@ -103,7 +284,7 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
         let session = match session {
             Some(s) => s,
             None => {
-                let (child, stdin) = start_server(svr, &root).await?;
+                let (child, stdin) = start_server(&svr, &root).await?;
                 let session = Session {
                     server_id: sid.clone(),
                     root: root.clone(),
@@ -121,26 +302,32 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
         let content = tokio::fs::read_to_string(file_path)
             .await
             .unwrap_or_default();
-        let language_id = server::language_for_ext(&ext);
+        let language_id = svr.language_id;
         let mut owned = session.stdin.lock().unwrap().take();
         if let Some(ref mut stdin) = owned {
             send_did_open(stdin, file_path, language_id, &content).await;
         }
         *session.stdin.lock().unwrap() = owned;
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
         all_diags.extend(session.diags.lock().unwrap().clone());
     }
     Ok(all_diags)
 }
 
-async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, ChildStdin), String> {
+async fn start_server(
+    svr: &server::LspServer,
+    root: &str,
+) -> Result<(Child, ChildStdin), String> {
     let bin_path = ensure_binary(svr.binary)?;
     let mut cmd = Command::new(&bin_path);
-    cmd.args(svr.args);
+    cmd.args(&*svr.args);
     cmd.current_dir(root);
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
+    cmd.stderr(Stdio::inherit());
+    // Debug: check if PATH includes nix profile bin
+    eprintln!("ws: start_server PATH={}", std::env::var("PATH").unwrap_or_default());
+    eprintln!("ws: spawning {} in {} with {}", svr.id, root, bin_path);
 
     let mut child = cmd
         .spawn()
@@ -152,18 +339,20 @@ async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, Chi
     let diags = diags_arc.clone();
     let sid = svr.id.to_string();
     tokio::spawn(async move {
-        let mut reader = BufReader::new(stdout);
-        let mut buf = Vec::new();
-        let mut partial = Vec::new();
+        use tokio::io::AsyncReadExt;
+        let mut reader = tokio::io::BufReader::new(stdout);
+        let mut buf = vec![0u8; 8192];
+        let mut data = Vec::new();
         loop {
-            buf.clear();
-            match reader.read_until(b'\n', &mut buf).await {
+            match reader.read(&mut buf).await {
                 Ok(0) => break,
-                Ok(_) => {
-                    partial.extend_from_slice(&buf);
-                    while let Ok((msg, rest)) = parse_jsonrpc(&partial) {
-                        partial = rest.to_vec();
-                        process_message(&sid, &msg, &diags).await;
+                Ok(n) => {
+                    data.extend_from_slice(&buf[..n]);
+                    while let Ok((msg, rest)) = parse_jsonrpc(&data) {
+                        if msg.get("method").and_then(|v| v.as_str()).is_some() {
+                            process_message(&sid, &msg, &diags).await;
+                        }
+                        data = rest.to_vec();
                     }
                 }
                 Err(_) => break,
@@ -172,7 +361,7 @@ async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, Chi
     });
 
     send_initialize(&mut stdin).await?;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
     Ok((child, stdin))
 }
 
@@ -225,7 +414,7 @@ async fn send_initialize(stdin: &mut ChildStdin) -> Result<(), String> {
         }
     });
     write_msg(stdin, &msg).await;
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
     write_msg(
         stdin,
         &serde_json::json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }),
@@ -234,14 +423,11 @@ async fn send_initialize(stdin: &mut ChildStdin) -> Result<(), String> {
     Ok(())
 }
 
-async fn send_did_open(stdin: &mut ChildStdin, path: &str, language_id: &str, content: &str) {
-    write_msg(stdin, &serde_json::json!({
-        "jsonrpc": "2.0", "method": "textDocument/didOpen",
-        "params": { "textDocument": { "uri": format!("file://{}", path), "languageId": language_id, "version": 1, "text": content } }
-    })).await;
-}
-
-async fn process_message(_sid: &str, msg: &serde_json::Value, diags: &Arc<Mutex<Vec<Diagnostic>>>) {
+async fn process_message(
+    _sid: &str,
+    msg: &serde_json::Value,
+    diags: &Arc<Mutex<Vec<Diagnostic>>>,
+) {
     if let Some(params) = msg.get("params") {
         if let Some(uri) = params.get("uri").and_then(|v| v.as_str()) {
             if let Some(diagnostics) = params.get("diagnostics").and_then(|v| v.as_array()) {
@@ -249,9 +435,12 @@ async fn process_message(_sid: &str, msg: &serde_json::Value, diags: &Arc<Mutex<
                 let mut collected = Vec::new();
                 for d in diagnostics {
                     if let Some(range) = d.get("range").and_then(|r| r.get("start")) {
-                        let line = range.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                        let col =
-                            range.get("character").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                        let line =
+                            range.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                        let col = range
+                            .get("character")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0) as usize;
                         let severity =
                             d.get("severity").and_then(|v| v.as_u64()).unwrap_or(1) as u8;
                         let message = d

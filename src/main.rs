@@ -13,127 +13,56 @@ const DEFAULT_SERVER: &str = "http://localhost:8321";
 #[derive(Parser)]
 #[command(name = "ws", version, about = "Headless IDE remote client & server")]
 struct Cli {
-    /// Server URL (default: http://localhost:8321, override: REMOTE_WS env)
     #[arg(short, long, default_value = DEFAULT_SERVER)]
     server: String,
-
+    #[arg(long)]
+    ssh: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Start the HTTP server (with file watching + LSP)
-    Serve {
-        /// Port to listen on
-        #[arg(short, long, default_value = "8321")]
-        port: u16,
-    },
-    /// Start the MCP server (stdio JSON-RPC, runs tools locally)
+    Serve { #[arg(short, long, default_value = "8321")] port: u16 },
     Mcp,
-    /// Read a file
     Read { path: String },
-    /// Execute a shell command
     Bash { command: String },
-    /// Edit a file with text replacements
-    Edit {
-        path: String,
-        old_text: String,
-        new_text: String,
-    },
-    /// Write content to a file
+    Edit { path: String, old_text: String, new_text: String },
     Write { path: String, content: String },
-    /// Search for a pattern in files
-    Grep {
-        pattern: String,
-        path: Option<String>,
-    },
-    /// Find files matching a pattern
-    Find {
-        path: String,
-        #[arg(long)]
-        name: Option<String>,
-    },
-    /// List directory contents
+    Grep { pattern: String, path: Option<String> },
+    Find { path: String, #[arg(long)] name: Option<String> },
     Ls { path: String },
-    /// Start a background command on the server
     Spawn { command: String },
-    /// Read logs from a background session
     Logs { session_id: String },
-    /// Check status of a background session
     Status { session_id: String },
-    /// Kill a background session
     Kill { session_id: String },
-    /// List all background sessions
     Sessions,
-    /// Diagnose a file using LSP (auto-downloads + runs LSP server)
     Diagnose { path: String },
-    /// List running LSP sessions
+    Lsp { method: String, path: String, line: u32, column: u32 },
     LspSessions,
-    /// LSP hover at a position
-    LspHover {
-        path: String,
-        line: usize,
-        character: usize,
-    },
-    /// LSP go to definition at a position
-    LspDefinition {
-        path: String,
-        line: usize,
-        character: usize,
-    },
-    /// LSP find references at a position
-    LspReferences {
-        path: String,
-        line: usize,
-        character: usize,
-    },
-    /// LSP code completion at a position
-    LspCompletion {
-        path: String,
-        line: usize,
-        character: usize,
-    },
-    /// Run a git command on the server
     #[command(trailing_var_arg = true)]
     Git { args: Vec<String> },
-    /// Package management (Nix-based)
-    Pkg {
-        #[command(subcommand)]
-        action: PkgAction,
-    },
+    Pkg { #[command(subcommand)] action: PkgAction },
 }
 
 #[derive(clap::Subcommand)]
 enum PkgAction {
-    /// Install a package (e.g. "go", "go@1.21", "nodejs@18")
     Install { package: String },
-    /// Search for packages
     Search { query: String },
-    /// List installed packages
     List,
-    /// Remove a package
     Remove { package: String },
-    /// Apply packages from ws.yaml (install missing ones)
     Apply,
-    /// Sync ws.yaml + ws.lock from current state
     Sync,
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-
-    // Set up Nix profile in PATH (for nix commands + installed bins)
     nix::setup_env();
 
     match cli.command {
-        Command::Serve { port } => {
-            start_server(port).await;
-        }
-        Command::Mcp => {
-            mcp::run().await;
-        }
+        Command::Serve { port } => start_server(port).await,
+        Command::Mcp => mcp::run().await,
         Command::Pkg { action } => {
             let result = match action {
                 PkgAction::Install { package } => nix::install(&package),
@@ -149,31 +78,23 @@ async fn main() {
             }
         }
         cmd => {
-            let server = std::env::var("REMOTE_WS").unwrap_or(cli.server);
-            remote_call(&server, &cmd).await;
+            if let Some(ref ssh_host) = cli.ssh.or_else(|| std::env::var("WS_SSH").ok()) {
+                ssh_call(ssh_host, &cmd);
+            } else {
+                let server = std::env::var("REMOTE_WS").unwrap_or(cli.server);
+                remote_call(&server, &cmd).await;
+            }
         }
     }
 }
 
 async fn start_server(port: u16) {
-    // Set up Nix profile in PATH
     nix::setup_env();
-
     let addr = format!("0.0.0.0:{}", port);
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .expect("bind failed");
-
+    let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind failed");
     let app = server::router();
-    println!(
-        "ws {} listening on http://{}",
-        env!("CARGO_PKG_VERSION"),
-        addr
-    );
-
-    // Start file watcher in background (non-blocking)
+    println!("ws {} listening on http://{}", env!("CARGO_PKG_VERSION"), addr);
     let _ = watch::start_watch(".");
-
     axum::serve(listener, app).await.expect("serve failed");
 }
 
@@ -185,45 +106,65 @@ async fn remote_call(server: &str, cmd: &Command) {
         Command::Sessions | Command::LspSessions => {
             let endpoint = match cmd {
                 Command::Sessions => "sessions",
-                Command::LspSessions => "lsp-sessions",
+                Command::LspSessions => "lsp/sessions",
                 _ => unreachable!(),
             };
             let url = format!("{}/{}", base, endpoint);
             match client.get(&url).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    println!("{}", resp.text().await.unwrap_or_default());
-                }
-                Ok(resp) => {
-                    eprintln!(
-                        "sessions {}: {}",
-                        resp.status(),
-                        resp.text().await.unwrap_or_default()
-                    );
-                    std::process::exit(1);
-                }
+                Ok(resp) if resp.status().is_success() => println!("{}", resp.text().await.unwrap_or_default()),
+                Ok(resp) => { eprintln!("{} {}: {}", endpoint, resp.status(), resp.text().await.unwrap_or_default()); std::process::exit(1); }
                 Err(e) => connection_error(server, e),
             }
         }
         cmd => {
-            let (method, body) = build_request(cmd);
+            let (method, body) = command_route(cmd);
             let url = format!("{}/{}", base, method);
             match client.post(&url).json(&body).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    println!("{}", resp.text().await.unwrap_or_default());
-                }
-                Ok(resp) => {
-                    eprintln!(
-                        "{} {}: {}",
-                        method,
-                        resp.status(),
-                        resp.text().await.unwrap_or_default()
-                    );
-                    std::process::exit(1);
-                }
+                Ok(resp) if resp.status().is_success() => println!("{}", resp.text().await.unwrap_or_default()),
+                Ok(resp) => { eprintln!("{} {}: {}", method, resp.status(), resp.text().await.unwrap_or_default()); std::process::exit(1); }
                 Err(e) => connection_error(server, e),
             }
         }
     }
+}
+
+fn ssh_call(host: &str, cmd: &Command) {
+    // Build CLI args directly from Command — JSON map iteration is alphabetical, not insertion order
+    let args: Vec<String> = match cmd {
+        Command::Lsp { method, path, line, column } => {
+            vec!["lsp".into(), method.clone(), path.clone(), line.to_string(), column.to_string()]
+        }
+        Command::Find { path, name } => {
+            let mut v = vec!["find".into(), path.clone()];
+            if let Some(n) = name {
+                v.push("--name".into());
+                v.push(n.clone());
+            }
+            v
+        }
+        cmd => {
+            let (route, body) = command_route(cmd);
+            let mut v = vec![route.to_string()];
+            if let Some(obj) = body.as_object() {
+                for val in obj.values() {
+                    match val {
+                        serde_json::Value::String(s) => v.push(s.clone()),
+                        serde_json::Value::Number(n) => v.push(n.to_string()),
+                        _ => {}
+                    }
+                }
+            }
+            v
+        }
+    };
+    let cmdline: String = args.iter().map(|a| format!("'{}'", a.replace('\'', "'\\''"))).collect::<Vec<_>>().join(" ");
+    let status = std::process::Command::new("ssh")
+        .args(["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"])
+        .arg(host)
+        .arg(format!("ws {}", cmdline))
+        .status()
+        .expect("ssh failed");
+    std::process::exit(status.code().unwrap_or(1));
 }
 
 fn connection_error(server: &str, e: reqwest::Error) -> ! {
@@ -233,18 +174,12 @@ fn connection_error(server: &str, e: reqwest::Error) -> ! {
     std::process::exit(1);
 }
 
-fn build_request(cmd: &Command) -> (&'static str, serde_json::Value) {
+// ponytail: single match arm for both HTTP and SSH paths.
+fn command_route(cmd: &Command) -> (&'static str, serde_json::Value) {
     match cmd {
         Command::Read { path } => ("read", json!({ "path": path })),
         Command::Bash { command } => ("bash", json!({ "command": command })),
-        Command::Edit {
-            path,
-            old_text,
-            new_text,
-        } => (
-            "edit",
-            json!({ "path": path, "edits": [{"old_text": old_text, "new_text": new_text}] }),
-        ),
+        Command::Edit { path, old_text, new_text } => ("edit", json!({ "path": path, "edits": [{"old_text": old_text, "new_text": new_text}] })),
         Command::Write { path, content } => ("write", json!({ "path": path, "content": content })),
         Command::Grep { pattern, path } => ("grep", json!({ "pattern": pattern, "path": path })),
         Command::Find { path, name } => ("find", json!({ "path": path, "name": name })),
@@ -254,46 +189,10 @@ fn build_request(cmd: &Command) -> (&'static str, serde_json::Value) {
         Command::Status { session_id } => ("status", json!({ "session_id": session_id })),
         Command::Kill { session_id } => ("kill", json!({ "session_id": session_id })),
         Command::Diagnose { path } => ("lsp/diagnose", json!({ "path": path })),
-        Command::LspHover {
-            path,
-            line,
-            character,
-        } => (
-            "lsp/hover",
-            json!({ "path": path, "line": line, "character": character }),
-        ),
-        Command::LspDefinition {
-            path,
-            line,
-            character,
-        } => (
-            "lsp/definition",
-            json!({ "path": path, "line": line, "character": character }),
-        ),
-        Command::LspReferences {
-            path,
-            line,
-            character,
-        } => (
-            "lsp/references",
-            json!({ "path": path, "line": line, "character": character }),
-        ),
-        Command::LspCompletion {
-            path,
-            line,
-            character,
-        } => (
-            "lsp/completion",
-            json!({ "path": path, "line": line, "character": character }),
-        ),
-        Command::Git { args } => (
-            "bash",
-            json!({ "command": format!("git {}", args.join(" ")) }),
-        ),
-        Command::Pkg { .. }
-        | Command::LspSessions
-        | Command::Sessions
-        | Command::Serve { .. }
-        | Command::Mcp => unreachable!(),
+        Command::Lsp { method, path, line, column } => ("lsp/request", json!({ "method": method, "path": path, "line": line, "column": column })),
+        Command::Git { args } => ("bash", json!({ "command": format!("git {}", args.join(" ")) })),
+        Command::Sessions => ("sessions", json!({})),
+        Command::LspSessions => ("lsp-sessions", json!({})),
+        Command::Pkg { .. } | Command::Serve { .. } | Command::Mcp => unreachable!(),
     }
 }

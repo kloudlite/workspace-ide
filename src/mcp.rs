@@ -201,6 +201,17 @@ fn tool_definitions() -> Vec<Value> {
         tool_str("kill", "Stop a background session", "session_id"),
         tool_noprops("sessions", "List all background sessions"),
         tool_str("diagnose", "Run LSP diagnostics on a file", "path"),
+        tool(
+            "lsp_request",
+            "Make an LSP request (hover, definition, references, completion)",
+            json!({
+                "method": { "type": "string", "description": "LSP method: textDocument/hover, textDocument/definition, textDocument/references, textDocument/completion" },
+                "path": { "type": "string", "description": "File path" },
+                "line": { "type": "number", "description": "Line number (0-indexed)" },
+                "column": { "type": "number", "description": "Column (0-indexed)" },
+            }),
+            &["method", "path", "line", "column"],
+        ),
         tool_noprops("lsp_sessions", "List running LSP server sessions"),
     ]
 }
@@ -292,6 +303,26 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<Value, String> {
         "diagnose" => {
             let path = get_str(args, "path")?;
             Ok(json!(crate::lsp::diagnose_file(path).await?))
+        }
+        "lsp_request" => {
+            let method = get_str(args, "method")?;
+            let path = get_str(args, "path")?;
+            let line = args.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let col = args.get("column").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let params = serde_json::json!({
+                "textDocument": { "uri": format!("file://{}", path) },
+                "position": { "line": line, "character": col },
+            });
+            let params = if method.ends_with("/references") {
+                serde_json::json!({
+                    "textDocument": { "uri": format!("file://{}", path) },
+                    "position": { "line": line, "character": col },
+                    "context": { "includeDeclaration": true },
+                })
+            } else {
+                params
+            };
+            crate::lsp::lsp_request(path, method, params).await.map(|v| json!(v))
         }
         "lsp_sessions" => Ok(json!(crate::lsp::list_sessions())),
         _ => Err(format!("Unknown tool: {}", name)),
