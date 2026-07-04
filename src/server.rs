@@ -255,6 +255,6 @@ async fn fs_status_handler() -> Json<tools::FsStatusResult> {
         branch: String::new(),
         branches: vec![],
         changes: vec![],
-        ignored_count: 0,
+        ignored_patterns: vec![],
     }))
 }

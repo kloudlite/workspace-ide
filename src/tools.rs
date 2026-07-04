@@ -69,7 +69,7 @@ pub struct FsStatusResult {
     pub branch: String,
     pub branches: Vec<String>,
     pub changes: Vec<FsChange>,
-    pub ignored_count: usize,
+    pub ignored_patterns: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -571,14 +571,14 @@ pub async fn fs_status() -> Result<FsStatusResult, ToolError> {
                 .collect()
         })
         .unwrap_or_default();
-    let ignored_count = Command::new("git")
-        .args(["ls-files", "--others", "--ignored", "--exclude-standard"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .await
-        .map(|o| String::from_utf8_lossy(&o.stdout).lines().count())
-        .unwrap_or(0);
+    let ignored_patterns = std::fs::read_to_string(".gitignore")
+        .map(|s| {
+            s.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .collect()
+        })
+        .unwrap_or_default();
     let output = Command::new("git")
         .args(["status", "--porcelain"])
         .stdout(Stdio::piped())
@@ -597,5 +597,5 @@ pub async fn fs_status() -> Result<FsStatusResult, ToolError> {
             Some(FsChange { path, status })
         })
         .collect();
-    Ok(FsStatusResult { branch, branches, changes, ignored_count })
+    Ok(FsStatusResult { branch, branches, changes, ignored_patterns })
 }
