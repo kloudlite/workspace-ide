@@ -523,31 +523,42 @@ pub fn walk_files(dir: &Path, f: &mut dyn FnMut(&Path)) {
 /// ponytail: called every ~10min from watch loop.
 pub fn reconcile_lsp() -> (usize, usize) {
     use std::collections::HashSet;
-    let mut needed = HashSet::new();
+    let mut needed: HashSet<&str> = HashSet::new();
+    for svr in server::SERVERS {
+        for pkg in svr.nix_packages {
+            needed.insert(pkg);
+        }
+        needed.insert(svr.binary);
+    }
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    // Only keep LSP binaries+debs for languages with files in the workspace
+    let mut active: HashSet<&str> = HashSet::new();
     walk_files(&cwd, &mut |p| {
         let ext = extension_for(&p.to_string_lossy());
         for svr in server::for_extension(&ext) {
-            needed.insert(svr.binary);
+            for pkg in svr.nix_packages {
+                active.insert(pkg);
+            }
+            active.insert(svr.binary);
         }
     });
     let mut installed_count = 0;
     let mut uninstalled = 0;
-    for svr in server::SERVERS {
+    for pkg in needed {
         let on_path = std::process::Command::new("which")
-            .arg(svr.binary)
+            .arg(pkg)
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
-        if needed.contains(svr.binary) {
+        if active.contains(pkg) {
             if !on_path {
-                eprintln!("ws: installing LSP: {}", svr.binary);
-                let _ = crate::nix::install_auto(svr.binary);
+                eprintln!("ws: installing LSP pkg: {}", pkg);
+                let _ = crate::nix::install_auto(pkg);
                 installed_count += 1;
             }
         } else if on_path {
-            eprintln!("ws: uninstalling unused LSP: {}", svr.binary);
-            let _ = crate::nix::remove(svr.binary);
+            eprintln!("ws: uninstalling unused LSP pkg: {}", pkg);
+            let _ = crate::nix::remove(pkg);
             uninstalled += 1;
         }
     }
