@@ -38,7 +38,13 @@ pub fn start_watch(root: &str) -> Result<(), String> {
                 match result {
                     Ok(diags) => {
                         for d in &diags {
-                            eprintln!("  {} {}:{}  {}", severity_label(d.severity), d.line + 1, d.column + 1, d.message);
+                            eprintln!(
+                                "  {} {}:{}  {}",
+                                severity_label(d.severity),
+                                d.line + 1,
+                                d.column + 1,
+                                d.message
+                            );
                         }
                     }
                     Err(e) => eprintln!("  lsp init error: {}", e),
@@ -118,7 +124,9 @@ pub fn start_watch(root: &str) -> Result<(), String> {
 }
 
 fn severity_label(s: u8) -> &'static str {
-    ["", "ERROR", "WARN", "INFO", "HINT"].get(s as usize).unwrap_or(&"?")
+    ["", "ERROR", "WARN", "INFO", "HINT"]
+        .get(s as usize)
+        .unwrap_or(&"?")
 }
 
 // ponytail: single shared walk, replaces duplicate do_scan + walk_dir
