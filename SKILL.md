@@ -29,12 +29,16 @@ ws find <path> [--name <glob>]    # Find files matching a glob
 
 ### Shell
 
+**IMPORTANT: `bash` blocks until the command exits.** Use it only for short-lived commands that complete within seconds (compiles, tests, file ops). For anything that runs indefinitely — dev servers, watchers, daemons — use `spawn` instead.
+
 ```bash
-ws bash "<command>"               # Execute any shell command
+ws bash "<command>"               # Short-lived shell command (blocks until done)
 ws git <args>                     # Run git commands (use -- before flags like --global)
 ```
 
 ### Background Sessions
+
+Use `spawn` for any command that won't exit on its own — dev servers, file watchers, build daemons. The command runs in the background; check output later with `logs`.
 
 ```bash
 ws spawn "<command>"              # Start a long-running process
