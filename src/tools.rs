@@ -64,6 +64,31 @@ pub struct LsResult {
     pub entries: Vec<LsEntry>,
 }
 
+#[derive(Serialize)]
+pub struct FsStatusResult {
+    pub branch: String,
+    pub changes: Vec<FsChange>,
+}
+
+#[derive(Serialize)]
+pub struct FsChange {
+    pub path: String,
+    pub status: String,
+}
+
+#[derive(Serialize)]
+pub struct FsTreeResult {
+    pub root: String,
+    pub entries: Vec<FsEntry>,
+}
+
+#[derive(Serialize)]
+pub struct FsEntry {
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+}
+
 #[derive(Debug)]
 pub struct ToolError(pub String);
 
@@ -481,4 +506,71 @@ pub async fn list_dir(path: &str) -> Result<LsResult, ToolError> {
     }
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(LsResult { entries })
+}
+
+// --- FS API: tree + git status ---
+
+pub async fn fs_tree(path: &str, depth: u32) -> Result<FsTreeResult, ToolError> {
+    let canonical = std::path::Path::new(path)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(path));
+    // ponytail: find with -maxdepth, filters hidden + node_modules + target
+    let output = Command::new("find")
+        .arg(canonical.as_os_str())
+        .arg("-maxdepth").arg(depth.to_string())
+        .args(["-not", "-path", "*/.git/*"])
+        .args(["-not", "-path", "*/node_modules/*"])
+        .args(["-not", "-path", "*/target/*"])
+        .args(["-not", "-name", ".*"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await?;
+    let root_str = canonical.to_string_lossy().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut entries: Vec<FsEntry> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && *l != root_str)
+        .filter_map(|l| {
+            let p = std::path::Path::new(l);
+            let rel = l.strip_prefix(&root_str)?.trim_start_matches('/');
+            let is_dir = p.is_dir();
+            let size = if is_dir { 0 } else { p.metadata().ok()?.len() };
+            Some(FsEntry { path: rel.to_string(), is_dir, size })
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        a.is_dir.cmp(&b.is_dir).reverse().then(a.path.cmp(&b.path))
+    });
+    Ok(FsTreeResult { root: root_str, entries })
+}
+
+pub async fn fs_status() -> Result<FsStatusResult, ToolError> {
+    let branch = Command::new("git")
+        .args(["branch", "--show-current"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    let output = Command::new("git")
+        .args(["status", "--porcelain"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // ponytail: --porcelain format: "XY path" or "XY old -> new" for renames
+    let changes: Vec<FsChange> = stdout
+        .lines()
+        .filter_map(|l| {
+            if l.len() < 4 { return None; }
+            let status = l[..2].trim().to_string();
+            let rest = l[3..].trim_start();
+            let path = rest.split(" -> ").last().unwrap_or(rest).to_string();
+            Some(FsChange { path, status })
+        })
+        .collect();
+    Ok(FsStatusResult { branch, changes })
 }

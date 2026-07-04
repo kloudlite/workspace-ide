@@ -44,6 +44,8 @@ pub fn router() -> Router {
         .route("/lsp/diagnose", post(lsp_diagnose_handler))
         .route("/lsp/sessions", get(lsp_sessions_handler))
         .route("/lsp/request", post(lsp_request_handler))
+        .route("/fs/tree", post(fs_tree_handler))
+        .route("/fs/status", get(fs_status_handler))
 }
 
 async fn read_handler(
@@ -233,4 +235,24 @@ async fn lsp_request_handler(
         .await
         .map(Json)
         .map_err(|e| err(StatusCode::BAD_REQUEST, e))
+}
+
+// --- FS API ---
+
+async fn fs_tree_handler(
+    Json(req): Json<Value>,
+) -> Result<Json<tools::FsTreeResult>, (StatusCode, Json<ErrorResponse>)> {
+    let path = req.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+    let depth = req.get("depth").and_then(|v| v.as_u64()).unwrap_or(2) as u32;
+    tools::fs_tree(path, depth.min(5))
+        .await
+        .map(Json)
+        .map_err(|e| err(StatusCode::BAD_REQUEST, e.0))
+}
+
+async fn fs_status_handler() -> Json<tools::FsStatusResult> {
+    Json(tools::fs_status().await.unwrap_or(tools::FsStatusResult {
+        branch: String::new(),
+        changes: vec![],
+    }))
 }
