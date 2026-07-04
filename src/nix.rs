@@ -1,7 +1,7 @@
 //! Nix package manager — host daemon, shared store, per-HOME profiles
 //! Supports ws.yaml + ws.lock for reproducible workspaces, package@version syntax
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Command;
 
@@ -257,6 +257,9 @@ pub fn apply_yaml() -> Result<String, String> {
 
 fn write_workspace_files() -> Result<(), String> {
     let pkgs = get_installed()?;
+    // ponytail: LSP servers are auto-installed at startup, not developer deps
+    let lsp_pkgs: HashSet<&str> =
+        crate::lsp::server::all_packages().into_iter().collect();
     let mut yaml = String::new();
     let mut lock_pkgs = Vec::new();
     let mut yaml_pkgs = Vec::new();
@@ -265,16 +268,21 @@ fn write_workspace_files() -> Result<(), String> {
             continue;
         }
         let version = extract_version(store_path);
+        // ws.lock tracks everything (including LSP servers for reproducibility)
+        lock_pkgs.push(format!(
+            "  {}:\n      version: \"{}\"\n      store: \"{}\"",
+            name, version, store_path
+        ));
+        // ws.yaml is dev deps only — skip IDE/LSP tooling
+        if lsp_pkgs.contains(name.as_str()) {
+            continue;
+        }
         let yaml_entry = if version.is_empty() {
             format!("  - {}", name)
         } else {
             format!("  - {}@{}", name, version)
         };
         yaml_pkgs.push(yaml_entry);
-        lock_pkgs.push(format!(
-            "  {}:\n      version: \"{}\"\n      store: \"{}\"",
-            name, version, store_path
-        ));
     }
     yaml.push_str("# ws packages — managed by 'ws nix'\npackages:\n");
     yaml.push_str(&yaml_pkgs.join("\n"));
