@@ -145,7 +145,8 @@ function createRemoteAutocompleteProvider(inner: AutocompleteProvider): Autocomp
 // ponytail: sync ops for file reads at submit time; images are small
 import { readFileSync } from "fs";
 
-const CLIPBOARD_PATTERN = /\S*pi-clipboard-\S+\.(png|jpg|jpeg|gif|webp)\b/gi;
+const CLIPBOARD_PATTERN = /\S*pi-clipboard-\S+\.(png|jpg|jpeg|gif|webp)\b/i;
+const CLIPBOARD_PATTERN_GLOBAL = /\S*pi-clipboard-\S+\.(png|jpg|jpeg|gif|webp)\b/gi;
 
 function mimeTypeFor(ext: string): string {
   const m: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
@@ -153,7 +154,7 @@ function mimeTypeFor(ext: string): string {
 }
 
 function handleClipboardImages(text: string, existingImages: any[]): { text: string; images: any[] } {
-  const matches = text.matchAll(CLIPBOARD_PATTERN);
+  const matches = text.matchAll(CLIPBOARD_PATTERN_GLOBAL);
   let cleaned = text;
   const newImages = [...(existingImages ?? [])];
 
