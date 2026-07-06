@@ -1,6 +1,7 @@
 use crate::{lsp, tools};
 use axum::{
-    http::StatusCode,
+    body::Bytes,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
@@ -29,6 +30,7 @@ pub fn router() -> Router {
         .route("/bash", post(bash_handler))
         .route("/edit", post(edit_handler))
         .route("/write", post(write_handler))
+        .route("/upload", post(upload_handler))
         .route("/grep", post(grep_handler))
         .route("/find", post(find_handler))
         .route("/ls", post(ls_handler))
@@ -89,6 +91,20 @@ async fn write_handler(
     let path = get_str(&req, "path")?;
     let content = get_str(&req, "content")?;
     tools::write_file(path, content)
+        .await
+        .map(Json)
+        .map_err(|e| err(StatusCode::BAD_REQUEST, e.0))
+}
+
+async fn upload_handler(
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<tools::WriteResult>, (StatusCode, Json<ErrorResponse>)> {
+    let path = headers
+        .get("x-ws-path")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| err(StatusCode::BAD_REQUEST, "missing x-ws-path header"))?;
+    tools::write_bytes(path, &body)
         .await
         .map(Json)
         .map_err(|e| err(StatusCode::BAD_REQUEST, e.0))

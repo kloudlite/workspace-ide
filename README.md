@@ -9,7 +9,7 @@ Remote IDE server with an AI agent harness (`ws-pi`) powered by [pi](https://git
 ```
 ┌─ ws-pi ──────────────────────────────────┐
 │  ┌─ pi TUI ──────────────────────────┐   │
-│  │  read bash edit write grep find   │   │    HTTP     ┌──────────┐
+│  │  read bash edit write upload find │   │    HTTP     ┌──────────┐
 │  │  ls spawn logs kill lsp pkg_*     │───│───────────│ ws serve │
 │  │  !commands  @file-autocomplete    │   │    :8321   └──────────┘
 │  └───────────────────────────────────┘   │
@@ -34,7 +34,7 @@ ws-pi --list                                       # list past sessions
 
 Sessions are persisted in `~/.ws-sessions/<hash-of-server-url>/` — each server connection gets isolated session history. Default: continues the most recent session.
 
-### 18 remote tools
+### 19 remote tools
 
 All tool calls are HTTP requests to the ws server. No local filesystem access.
 
@@ -44,6 +44,7 @@ All tool calls are HTTP requests to the ws server. No local filesystem access.
 | `bash` | `/bash` | Run shell command (short-lived; see spawn) |
 | `edit` | `/edit` | Edit file by exact text replacement |
 | `write` | `/write` | Write/create file |
+| `upload` | `/upload` | Upload local file to remote workspace |
 | `grep` | `/grep` | Recursive pattern search |
 | `find` | `/find` | Find files by name |
 | `ls` | `/ls` | List directory |
@@ -86,12 +87,12 @@ ws --ssh user@host read file.go   # tunnel via SSH
 
 | Category | Commands |
 |----------|----------|
-| Files | `read`, `write`, `edit`, `ls`, `grep`, `find` |
+| Files | `read`, `write`, `upload`, `edit`, `ls`, `grep`, `find` |
 | Shell | `bash` |
 | Background | `spawn`, `logs`, `status`, `kill`, `sessions` |
 | LSP | `diagnose`, `lsp <method> <path> <line> <col>`, `lsp-sessions` |
 | Packages | `pkg install`, `search`, `list`, `remove`, `apply`, `sync` |
-| FS / Git | `ws fs tree <path>`, `ws fs status`, `ws fs diff` |
+| Git | `bash "git status"`, `bash "git diff"` |
 | MCP | `ws mcp` (JSON-RPC over stdio) |
 
 Full CLI reference: [SKILL.md](SKILL.md)
@@ -105,7 +106,7 @@ ws serve              # listens on :8321
 ws serve -p 3000      # custom port
 ```
 
-HTTP API mirrors the CLI tool-for-tool.
+HTTP API mirrors the CLI tool-for-tool. UI-only filesystem endpoints are also available: `POST /fs/tree`, `GET /fs/status`, `GET /fs/diff`.
 
 ---
 

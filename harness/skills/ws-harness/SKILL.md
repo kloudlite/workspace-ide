@@ -1,23 +1,24 @@
 ---
 name: ws-harness
-description: Use when working with a remote workspace via ws-pi — all file operations, shell commands, package management (nix), LSP diagnostics, and git are backed by a remote ws HTTP server. NOT local.
+description: Use when working with a remote workspace via ws-pi — file operations, shell commands, package management, LSP diagnostics, and background sessions are backed by a remote ws HTTP server.
 ---
 
 # ws-harness — Remote Workspace Agent
 
 ## ⚠️ CRITICAL: THIS IS REMOTE ONLY
 
-All 13 tools run on the **remote workspace server** via HTTP API. **Nothing runs locally.**
+All 19 tools talk to the **remote workspace server** via HTTP API. Workspace paths are remote. `upload` is the only tool that reads a local source file.
 
 - The cwd is `/workspace` — pi tells the agent it works at `/workspace`, so it naturally uses `/workspace` paths.
-- You don't need to think about local vs remote paths. Just use the tools normally.
+- You don't need path remapping. Use workspace-relative paths normally.
 
 ### File Operations
 
 | Tool | Parameters | Behaviour |
 |------|-----------|-----------|
 | `read` | `{ path }` | Returns file content + size. Use before edit to get exact text. |
-| `write` | `{ path, content }` | Creates file (incl. parent dirs) or overwrites entirely. |
+| `write` | `{ path, content }` | Creates text file (incl. parent dirs) or overwrites entirely. |
+| `upload` | `{ local_path, remote_path }` | Uploads a local file to the remote workspace. |
 | `edit` | `{ path, oldText, newText }` | Exact-text replacement — whitespace matters! One edit per call. |
 | `ls` | `{ path }` | Lists entries with `name`, `is_dir`, `size`. |
 
@@ -65,7 +66,7 @@ All 13 tools run on the **remote workspace server** via HTTP API. **Nothing runs
 
 ### Package Management
 
-**CRITICAL: Use these tools for ALL package management. NEVER run `nix`, `apt`, `brew`, `pip`, or any package manager via `bash`.**
+**CRITICAL: Use these tools for ALL package management. NEVER run raw package-manager commands via `bash`.**
 
 | Tool | Parameters | Behaviour |
 |------|-----------|-----------|
@@ -74,7 +75,7 @@ All 13 tools run on the **remote workspace server** via HTTP API. **Nothing runs
 | `pkg_search` | `{ query }` | Search available packages |
 | `pkg_list` | `{}` | List installed packages |
 
-**If a package management tool is not in this table, it does not exist. Do not try `nix profile remove`, `apt remove`, or any bash-based workaround.**
+**If a package management tool is not in this table, it does not exist. Do not use bash-based package workarounds.**
 
 ## Common Workflows
 
@@ -133,7 +134,7 @@ bash "go build ./..."
 | Tool returns `fetch failed` | ws server unreachable | Check server URL, SSH into host, restart container (`docker restart kloudlite-ws`) |
 | `bash` returns empty stdout | Command produced no output | Check exitCode in details, add `echo done` to command |
 | `diagnose` returns `[]` but code has errors | LSP not started yet | Wait 10s and retry, or read the file to trigger watcher |
-| `pkg_install` succeeds but binary not found | Nix profile symlink broken | Run `pkg_install` again (auto-fixes symlink), or use full store path from `nix profile list` |
+| `pkg_install` succeeds but binary not found | Profile not refreshed | Run `pkg_install` again, then retry the command |
 | `go build ./...` fails with `gcc not found` | CGo dependency | `pkg_install gcc` — the Go project uses CGo packages |
 | `lsp` returns empty | File extension not supported | Check if extension has a server (Go/TS/Python/Rust/C/C++/Lua/Bash/YAML/JSON) |
 | `git push` fails auth | No SSH key / token | Use `git remote set-url origin https://token@github.com/...` |

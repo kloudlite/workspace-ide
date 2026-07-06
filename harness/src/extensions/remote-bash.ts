@@ -12,31 +12,23 @@ const serverUrl = process.env.WS_SERVER_URL;
 function createRemoteBash() {
   return {
     operations: {
-      exec: (command: string, _cwd: string, { onData, signal, timeout }: any) => {
-        return new Promise<any>(async (resolve, reject) => {
-          const controller = new AbortController();
-          const timer = timeout
-            ? setTimeout(() => controller.abort(), timeout * 1000)
-            : undefined;
-          signal?.addEventListener?.("abort", () => controller.abort(), { once: true });
-
-          try {
-            const resp = await fetch(`${serverUrl}/bash`, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ command }),
-              signal: controller.signal,
-            });
-            if (timer) clearTimeout(timer);
-            const result = await resp.json();
-            if (result.stdout) onData?.(Buffer.from(result.stdout));
-            if (result.stderr) onData?.(Buffer.from(result.stderr));
-            resolve({ exitCode: result.exit_code ?? 0 });
-          } catch (err: any) {
-            if (timer) clearTimeout(timer);
-            reject(err.name === "AbortError" ? new Error("aborted") : err);
-          }
-        });
+      exec: async (command: string, _cwd: string, { onData, signal, timeout }: any) => {
+        const timeoutSignal = timeout ? AbortSignal.timeout(timeout * 1000) : undefined;
+        const fetchSignal = signal && timeoutSignal ? AbortSignal.any([signal, timeoutSignal]) : signal ?? timeoutSignal;
+        try {
+          const resp = await fetch(`${serverUrl}/bash`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ command }),
+            signal: fetchSignal,
+          });
+          const result = await resp.json();
+          if (result.stdout) onData?.(Buffer.from(result.stdout));
+          if (result.stderr) onData?.(Buffer.from(result.stderr));
+          return { exitCode: result.exit_code ?? 0 };
+        } catch (err: any) {
+          throw err.name === "AbortError" ? new Error("aborted") : err;
+        }
       },
     },
   };

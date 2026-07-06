@@ -9,8 +9,7 @@
     "ws-pi": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
-    "lint": "echo noop"
+    "build": "tsc"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "*"

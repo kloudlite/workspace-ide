@@ -43,6 +43,10 @@ enum Command {
         path: String,
         content: String,
     },
+    Upload {
+        local_path: String,
+        remote_path: String,
+    },
     Grep {
         pattern: String,
         path: Option<String>,
@@ -78,10 +82,6 @@ enum Command {
         column: u32,
     },
     LspSessions,
-    #[command(trailing_var_arg = true)]
-    Git {
-        args: Vec<String>,
-    },
     Pkg {
         #[command(subcommand)]
         action: PkgAction,
@@ -156,6 +156,42 @@ async fn remote_call(server: &str, cmd: &Command) {
     let client = reqwest::Client::new();
     let base = server.trim_end_matches('/');
 
+    if let Command::Upload {
+        local_path,
+        remote_path,
+    } = cmd
+    {
+        let bytes = match std::fs::read(local_path) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("upload: {}", e);
+                std::process::exit(1);
+            }
+        };
+        let url = format!("{}/upload", base);
+        match client
+            .post(&url)
+            .header("x-ws-path", remote_path)
+            .body(bytes)
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                println!("{}", resp.text().await.unwrap_or_default())
+            }
+            Ok(resp) => {
+                eprintln!(
+                    "upload {}: {}",
+                    resp.status(),
+                    resp.text().await.unwrap_or_default()
+                );
+                std::process::exit(1);
+            }
+            Err(e) => connection_error(server, e),
+        }
+        return;
+    }
+
     match cmd {
         Command::Sessions | Command::LspSessions => {
             let endpoint = match cmd {
@@ -227,6 +263,10 @@ fn ssh_call(host: &str, cmd: &Command) {
             }
             v
         }
+        Command::Upload {
+            local_path,
+            remote_path,
+        } => vec!["upload".into(), local_path.clone(), remote_path.clone()],
         cmd => {
             let (route, body) = command_route(cmd);
             let mut v = vec![route.to_string()];
@@ -299,12 +339,10 @@ fn command_route(cmd: &Command) -> (&'static str, serde_json::Value) {
             "lsp/request",
             json!({ "method": method, "path": path, "line": line, "column": column }),
         ),
-        Command::Git { args } => (
-            "bash",
-            json!({ "command": format!("git {}", args.join(" ")) }),
-        ),
         Command::Sessions => ("sessions", json!({})),
         Command::LspSessions => ("lsp-sessions", json!({})),
-        Command::Pkg { .. } | Command::Serve { .. } | Command::Mcp => unreachable!(),
+        Command::Upload { .. } | Command::Pkg { .. } | Command::Serve { .. } | Command::Mcp => {
+            unreachable!()
+        }
     }
 }

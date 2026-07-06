@@ -20,7 +20,8 @@ REMOTE_WS=http://host:8321 ws read file.go
 
 ```bash
 ws read <path>                    # Read file contents
-ws write <path> <content>         # Write/create a file
+ws write <path> <content>         # Write/create a text file
+ws upload <local> <remote>        # Upload a local file to the remote workspace
 ws edit <path> <old> <new>        # Replace text in a file
 ws ls <path>                      # List directory entries
 ws grep <pattern> [path]          # Search for pattern in files
@@ -33,8 +34,8 @@ ws find <path> [--name <glob>]    # Find files matching a glob
 
 ```bash
 ws bash "<command>"               # Short-lived shell command (blocks until done)
-ws fs status [path]                # Show git status for a directory (branch, changes, ignored patterns)
-ws fs diff                         # Show git diff (unstaged + staged separately)
+ws bash "git status"              # Run git through bash
+ws bash "git diff"                # Show git diff through bash
 ```
 
 ### Background Sessions
@@ -51,20 +52,20 @@ ws sessions                       # List all sessions
 
 ### LSP (Language Server Protocol)
 
-LSP servers auto-start based on file extension. Supported languages: rust, go, typescript, python, c/c++, lua, bash, yaml, json, dockerfile, terraform, svelte, vue, astro, css, html, zig, elixir, php.
+LSP servers auto-start based on file extension. Supported languages: rust, go, typescript, python, c/c++, lua, bash, yaml, json.
 
 ```bash
-ws lsp-diagnose <path>            # Get diagnostics for a file
-ws lsp-hover <path> <line> <col>  # Hover information
-ws lsp-definition <path> <l> <c>  # Go to definition
-ws lsp-references <path> <l> <c>  # Find references
-ws lsp-completion <path> <l> <c>  # Code completion
-ws lsp-sessions                   # List active LSP sessions
+ws diagnose <path>                                      # Get diagnostics for a file
+ws lsp textDocument/hover <path> <line> <col>           # Hover information
+ws lsp textDocument/definition <path> <line> <col>      # Go to definition
+ws lsp textDocument/references <path> <line> <col>      # Find references
+ws lsp textDocument/completion <path> <line> <col>      # Code completion
+ws lsp-sessions                                         # List active LSP sessions
 ```
 
 ### Packages
 
-Packages are managed via Nix with version pinning. Each workspace has `ws.yaml` (manifest) and `ws.lock` (lockfile) — commit both to your repo for reproducibility.
+Packages are managed with version pinning. Each workspace has `ws.yaml` (manifest) and `ws.lock` (lockfile) — commit both to your repo for reproducibility.
 
 ```bash
 ws pkg install <pkg>[@version]    # Install (e.g. go, go@1.21, nodejs@18)
@@ -97,9 +98,9 @@ Chain multiple edits as separate `ws edit` calls — each is atomic.
 ### LSP Diagnostics First
 
 ```bash
-ws lsp-diagnose src/main.rs       # Understand what's wrong
+ws diagnose src/main.rs       # Understand what's wrong
 # ... fix issues ...
-ws lsp-diagnose src/main.rs       # Verify fixes
+ws diagnose src/main.rs       # Verify fixes
 ```
 
 ### Hover for Understanding
@@ -122,7 +123,7 @@ ws logs <session_id>              # Check output later
 ```bash
 ws pkg install go                 # Install Go compiler
 ws bash "go version"              # Verify
-ws lsp-diagnose main.go           # LSP uses the installed tool
+ws diagnose main.go           # LSP uses the installed tool
 ```
 
 ### Version Pinning for Reproducibility
@@ -139,7 +140,7 @@ ws pkg install nodejs@22          # Pin Node.js 22
 ```bash
 ws edit src/main.rs "func old" "func new"
 ws bash "cargo build"
-ws lsp-diagnose src/main.rs
+ws diagnose src/main.rs
 ```
 
 ## Workflows
@@ -148,10 +149,10 @@ ws lsp-diagnose src/main.rs
 
 ```bash
 ws read src/main.rs
-ws lsp-diagnose src/main.rs
+ws diagnose src/main.rs
 ws edit src/main.rs "wrong_code" "fixed_code"
 ws bash "cargo build"
-ws lsp-diagnose src/main.rs
+ws diagnose src/main.rs
 ```
 
 ### Explore an Unknown Codebase
@@ -171,7 +172,7 @@ ws lsp-definition src/interesting.rs 15 20
 ws pkg install go@1.26 nodejs@22
 ws bash "go mod init myproject"
 ws write main.go "package main\nfunc main() {\n  println(\"hello\")\n}\n"
-ws lsp-diagnose main.go
+ws diagnose main.go
 ws bash "go build"
 ws pkg sync                        # Generate ws.yaml + ws.lock
 ```
@@ -180,6 +181,6 @@ ws pkg sync                        # Generate ws.yaml + ws.lock
 
 ```bash
 ws pkg apply                       # Installs all packages from ws.yaml
-# Uses the pinned nixpkgs revision from ws.lock
-# Same versions, every time, on any machine
+# Uses pinned versions from ws.lock
+# Same versions, every time
 ```

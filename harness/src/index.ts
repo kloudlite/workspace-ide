@@ -1,5 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { readFile } from "fs/promises";
 
 export interface WsConfig {
   /** HTTP server URL (e.g. "http://localhost:8321") */
@@ -79,6 +80,26 @@ export function createWsTools(config: WsConfig) {
       execute: async (_id, params: { path: string; content: string }, signal) => {
         await postJson(`${base}/write`, { path: params.path, content: params.content }, signal);
         return { content: [{ type: "text", text: "ok" }], details: {} };
+      },
+    }),
+    defineTool({
+      name: "upload",
+      label: "Upload",
+      description: "Upload a local file to the remote workspace",
+      parameters: Type.Object({
+        local_path: Type.String({ description: "Local file path" }),
+        remote_path: Type.String({ description: "Remote destination path" }),
+      }),
+      execute: async (_id, params: { local_path: string; remote_path: string }, signal) => {
+        const resp = await fetch(`${base}/upload`, {
+          method: "POST",
+          headers: { "x-ws-path": params.remote_path },
+          body: await readFile(params.local_path),
+          signal,
+        });
+        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}: ${await resp.text()}`);
+        const r: any = await resp.json();
+        return { content: [{ type: "text", text: `uploaded ${r.size} bytes` }], details: { size: r.size } };
       },
     }),
 
@@ -224,7 +245,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "pkg_install",
       label: "Pkg Install",
-      description: "Install a package on the remote workspace. Use this instead of apt, brew, pip, npm, or nix.",
+      description: "Install a package on the remote workspace. Use this instead of raw package-manager commands.",
       parameters: Type.Object({
         package: Type.String({ description: "Package name (e.g. go, nodejs, python3, gcc)" }),
       }),
@@ -259,7 +280,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "pkg_remove",
       label: "Pkg Remove",
-      description: "Uninstall a package from the remote workspace. Use this instead of raw nix/apt commands.",
+      description: "Uninstall a package from the remote workspace. Use this instead of raw package-manager commands.",
       parameters: Type.Object({ package: Type.String({ description: "Package name to uninstall" }) }),
       execute: async (_id, params: { package: string }, signal) => {
         const r: any = await postJson(`${base}/pkg/remove`, { package: params.package }, signal);

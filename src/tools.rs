@@ -228,6 +228,10 @@ pub async fn edit_file(path: &str, edits: &[EditOp]) -> Result<EditResult, ToolE
 }
 
 pub async fn write_file(path: &str, content: &str) -> Result<WriteResult, ToolError> {
+    write_bytes(path, content.as_bytes()).await
+}
+
+pub async fn write_bytes(path: &str, content: &[u8]) -> Result<WriteResult, ToolError> {
     if let Some(parent) = Path::new(path).parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
