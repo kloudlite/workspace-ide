@@ -88,7 +88,7 @@ pub fn start_watch(root: &str) {
                 }
             }
             // ponytail: reconcile every ~10min (300 ticks × 2s)
-            if reconcile_counter.is_multiple_of(300) {
+            if reconcile_counter.checked_rem(300) == Some(0) {
                 let (added, removed) = lsp::reconcile_lsp();
                 if added > 0 || removed > 0 {
                     eprintln!(
