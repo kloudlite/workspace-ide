@@ -18,7 +18,7 @@ All 19 tools talk to the **remote workspace server** via HTTP API. Workspace pat
 |------|-----------|-----------|
 | `read` | `{ path }` | Returns file content + size. Use before edit to get exact text. |
 | `write` | `{ path, content }` | Creates text file (incl. parent dirs) or overwrites entirely. |
-| `upload` | `{ local_path, remote_path }` | Uploads a local file to the remote workspace. |
+| `upload` | `{ local_path, remote_path }` | Uploads a local file to the remote workspace. Clipboard images are auto-uploaded to `/tmp/ws-clipboard/...`. |
 | `edit` | `{ path, oldText, newText }` | Exact-text replacement — whitespace matters! One edit per call. |
 | `ls` | `{ path }` | Lists entries with `name`, `is_dir`, `size`. |
 

@@ -145,7 +145,7 @@ function mimeTypeFor(ext: string): string {
   return m[ext.toLowerCase()] ?? "image/png";
 }
 
-function handleClipboardImages(text: string, existingImages: any[]): { text: string; images: any[] } {
+async function handleClipboardImages(text: string, existingImages: any[]): Promise<{ text: string; images: any[] }> {
   const matches = text.matchAll(CLIPBOARD_PATTERN_GLOBAL);
   let cleaned = text;
   const newImages = [...(existingImages ?? [])];
@@ -153,14 +153,20 @@ function handleClipboardImages(text: string, existingImages: any[]): { text: str
   for (const match of matches) {
     const localPath = match[0];
     const ext = (match[1] || "png").toLowerCase();
+    const name = localPath.split("/").pop() || `clipboard.${ext}`;
+    const remotePath = `/tmp/ws-clipboard/${name}`;
 
     try {
       const data = readFileSync(localPath);
-      const base64 = data.toString("base64");
-      newImages.push({ type: "image", data: base64, mimeType: mimeTypeFor(ext) });
-      cleaned = cleaned.replace(localPath, `[attached image: ${localPath.split("/").pop()}]`);
+      await fetch(`${serverUrl}/upload`, {
+        method: "POST",
+        headers: { "x-ws-path": remotePath },
+        body: data,
+      });
+      newImages.push({ type: "image", data: data.toString("base64"), mimeType: mimeTypeFor(ext) });
+      cleaned = cleaned.replace(localPath, `[attached image uploaded to ${remotePath}]`);
     } catch {
-      // ponytail: file deleted/perm error — leave path in text, agent will fail gracefully
+      // ponytail: file deleted/network error — leave path in text, agent will fail gracefully
     }
   }
 
@@ -183,7 +189,7 @@ export default function (pi: ExtensionAPI) {
   // ponytail: intercept submit to replace local clipboard image paths with base64
   pi.on("input", async (event) => {
     if (!CLIPBOARD_PATTERN.test(event.text)) return { action: "continue" as const };
-    const { text, images } = handleClipboardImages(event.text, event.images ?? []);
+    const { text, images } = await handleClipboardImages(event.text, event.images ?? []);
     return { action: "transform" as const, text, images };
   });
 }
