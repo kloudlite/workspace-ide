@@ -166,7 +166,7 @@ function handleClipboardImages(text: string, existingImages: any[]): { text: str
       const data = readFileSync(localPath);
       const base64 = data.toString("base64");
       newImages.push({ type: "image", data: base64, mimeType: mimeTypeFor(ext) });
-      cleaned = cleaned.replace(localPath, ""); // remove local path from text
+      cleaned = cleaned.replace(localPath, `[attached image: ${localPath.split("/").pop()}]`);
     } catch {
       // ponytail: file deleted/perm error — leave path in text, agent will fail gracefully
     }
