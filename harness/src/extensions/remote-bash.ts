@@ -158,10 +158,7 @@ async function handleClipboardImages(text: string, existingImages: any[]): Promi
     try {
       const data = readFileSync(localPath);
       newImages.push({ type: "image", data: data.toString("base64"), mimeType: mimeTypeFor(ext) });
-      cleaned = cleaned.replace(
-        localPath,
-        `[attached image: ${name}; local_path=${localPath}; use upload only if remote file access is needed]`,
-      );
+      cleaned = cleaned.replace(localPath, `[image: ${name}]\n<!-- local_path=${localPath}; call upload only if remote file bytes are needed -->`);
     } catch {
       // ponytail: file deleted/perm error — leave path in text, agent will fail gracefully
     }
