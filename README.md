@@ -66,7 +66,7 @@ All tool calls are HTTP requests to the ws server. No local filesystem access.
 
 - **`!command`** — inline bash: type `!cargo build` and it runs on the server, output streams back
 - **`@` autocomplete** — file path completion from the remote workspace (`@src/m` → `src/main.rs`)
-- **Clipboard images** — paste screenshots; they are attached to the message and uploaded to `/tmp/ws-clipboard/...` on the remote server
+- **Clipboard images** — paste screenshots; they are attached to the message. If the remote workspace needs file bytes, call `upload` with the shown `local_path`.
 
 ### Escape / interrupt
 

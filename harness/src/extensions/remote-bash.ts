@@ -154,19 +154,16 @@ async function handleClipboardImages(text: string, existingImages: any[]): Promi
     const localPath = match[0];
     const ext = (match[1] || "png").toLowerCase();
     const name = localPath.split("/").pop() || `clipboard.${ext}`;
-    const remotePath = `/tmp/ws-clipboard/${name}`;
 
     try {
       const data = readFileSync(localPath);
-      await fetch(`${serverUrl}/upload`, {
-        method: "POST",
-        headers: { "x-ws-path": remotePath },
-        body: data,
-      });
       newImages.push({ type: "image", data: data.toString("base64"), mimeType: mimeTypeFor(ext) });
-      cleaned = cleaned.replace(localPath, `[attached image uploaded to ${remotePath}]`);
+      cleaned = cleaned.replace(
+        localPath,
+        `[attached image: ${name}; local_path=${localPath}; use upload only if remote file access is needed]`,
+      );
     } catch {
-      // ponytail: file deleted/network error — leave path in text, agent will fail gracefully
+      // ponytail: file deleted/perm error — leave path in text, agent will fail gracefully
     }
   }
 
