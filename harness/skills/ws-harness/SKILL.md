@@ -18,11 +18,11 @@ All 19 tools talk to the **remote workspace server** via HTTP API. Workspace pat
 |------|-----------|-----------|
 | `read` | `{ path }` | Returns file content + size. Use before edit to get exact text. |
 | `write` | `{ path, content }` | Creates text file (incl. parent dirs) or overwrites entirely. |
-| `upload` | `{ local_path, remote_path }` | Uploads a local file to the remote workspace. Clipboard images show a `local_path`; upload only if remote file access is needed. |
+| `upload` | `{ local_path, remote_path }` | Uploads a local file to the remote workspace. For pasted images, use the displayed `pi-clipboard-...` filename as `local_path`. |
 | `edit` | `{ path, oldText, newText }` | Exact-text replacement — whitespace matters! One edit per call. |
 | `ls` | `{ path }` | Lists entries with `name`, `is_dir`, `size`. |
 
-**Best practice:** Always `read` before `edit` to see the exact text. `write` replaces the whole file — use `edit` for partial changes.
+**Best practice:** Always `read` before `edit` to see the exact text. After every `edit`, `write`, or `upload` of code/config, run `diagnose <path>` to catch LSP issues. `write` replaces the whole file — use `edit` for partial changes.
 
 ### Shell
 
@@ -62,7 +62,7 @@ All 19 tools talk to the **remote workspace server** via HTTP API. Workspace pat
 | `lsp` | `{ method, path, line, column }` | Methods: `textDocument/hover`, `textDocument/definition`, `textDocument/references`, `textDocument/completion`. Line/col are **0-indexed**. |
 | `diagnose` | `{ path }` | Returns errors/warnings/hints. `[]` = clean. |
 
-**Best practice:** Always `diagnose` first when helping with compilation errors. First LSP request can be slow (gopls indexing takes 30s+). If LSP returns empty, check if file extension is supported (Go, Rust, TS, Python, C/C++, Lua, Bash, YAML, JSON).
+**Best practice:** Always `diagnose` first when helping with compilation errors, and again after every file change that LSP can check. First LSP request can be slow (gopls indexing takes 30s+). If LSP returns empty, check if file extension is supported (Go, Rust, TS, Python, C/C++, Lua, Bash, YAML, JSON).
 
 ### Package Management
 

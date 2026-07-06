@@ -1,10 +1,16 @@
 import { Type } from "@sinclair/typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { readFile } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 
 export interface WsConfig {
   /** HTTP server URL (e.g. "http://localhost:8321") */
   serverUrl: string;
+}
+
+function localPath(path: string): string {
+  return path.includes("/") ? path : join(tmpdir(), path);
 }
 
 function postJson(url: string, body: unknown, signal?: AbortSignal): Promise<any> {
@@ -85,7 +91,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "upload",
       label: "Upload",
-      description: "Upload a local file to the remote workspace",
+      description: "Upload a local file to the remote workspace. For pasted images, pass the displayed pi-clipboard filename as local_path.",
       parameters: Type.Object({
         local_path: Type.String({ description: "Local file path" }),
         remote_path: Type.String({ description: "Remote destination path" }),
@@ -94,7 +100,7 @@ export function createWsTools(config: WsConfig) {
         const resp = await fetch(`${base}/upload`, {
           method: "POST",
           headers: { "x-ws-path": params.remote_path },
-          body: await readFile(params.local_path),
+          body: await readFile(localPath(params.local_path)),
           signal,
         });
         if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}: ${await resp.text()}`);

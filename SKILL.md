@@ -93,7 +93,7 @@ ws read src/main.rs               # Review current content first
 ws edit src/main.rs "old" "new"   # Then make the edit
 ```
 
-Chain multiple edits as separate `ws edit` calls — each is atomic.
+Chain multiple edits as separate `ws edit` calls — each is atomic. After every code/config `edit`, `write`, or `upload`, run `ws diagnose <path>` when the file type has LSP support.
 
 ### LSP Diagnostics First
 
