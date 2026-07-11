@@ -1,5 +1,12 @@
 // ponytail: binary name only — install via nix if not on PATH
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum RootMode {
+    Workspace,
+    Project,
+    ProjectOrDir,
+}
+
 #[derive(Clone)]
 pub struct LspServer {
     pub id: &'static str,
@@ -7,13 +14,11 @@ pub struct LspServer {
     pub extensions: &'static [&'static str],
     pub binary: &'static str,
     pub args: &'static [&'static str],
-    pub needs_lockfile: bool,
+    pub root_mode: RootMode,
     pub nix_packages: &'static [&'static str],
 }
 
 // ponytail: trimmed to servers actually used on kmac (Go mono-repo).
-// Add more as needed: zls, elixir-ls, php, svelte, astro, vue,
-// dockerfile-ls, terraform, css-ls, html-ls available in nixpkgs.
 pub static SERVERS: &[LspServer] = &[
     LspServer {
         id: "typescript",
@@ -21,7 +26,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
         binary: "typescript-language-server",
         args: &["--stdio"],
-        needs_lockfile: true,
+        root_mode: RootMode::Project,
         nix_packages: &["nodejs"],
     },
     LspServer {
@@ -30,7 +35,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".rs"],
         binary: "rust-analyzer",
         args: &[],
-        needs_lockfile: true,
+        root_mode: RootMode::Project,
         nix_packages: &["cargo", "rustc"],
     },
     LspServer {
@@ -39,7 +44,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".go"],
         binary: "gopls",
         args: &[],
-        needs_lockfile: true,
+        root_mode: RootMode::ProjectOrDir,
         nix_packages: &["go"],
     },
     LspServer {
@@ -48,7 +53,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".py", ".pyi"],
         binary: "pyright-langserver",
         args: &["--stdio"],
-        needs_lockfile: true,
+        root_mode: RootMode::ProjectOrDir,
         nix_packages: &["python3"],
     },
     LspServer {
@@ -57,7 +62,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh", ".hxx"],
         binary: "clangd",
         args: &[],
-        needs_lockfile: true,
+        root_mode: RootMode::ProjectOrDir,
         nix_packages: &["clang-tools"],
     },
     LspServer {
@@ -66,7 +71,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".lua"],
         binary: "lua-language-server",
         args: &[],
-        needs_lockfile: false,
+        root_mode: RootMode::Workspace,
         nix_packages: &[],
     },
     LspServer {
@@ -75,7 +80,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".sh", ".bash", ".zsh", ".ksh"],
         binary: "bash-language-server",
         args: &["start"],
-        needs_lockfile: false,
+        root_mode: RootMode::Workspace,
         nix_packages: &[],
     },
     LspServer {
@@ -84,7 +89,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".yaml", ".yml"],
         binary: "yaml-language-server",
         args: &["--stdio"],
-        needs_lockfile: false,
+        root_mode: RootMode::Workspace,
         nix_packages: &[],
     },
     LspServer {
@@ -93,7 +98,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".json", ".jsonc"],
         binary: "json-languageserver",
         args: &["--stdio"],
-        needs_lockfile: false,
+        root_mode: RootMode::Workspace,
         nix_packages: &[],
     },
 ];

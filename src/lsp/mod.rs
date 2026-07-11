@@ -116,7 +116,7 @@ pub async fn lsp_request(
         let _ = crate::nix::install_auto(pkg);
     }
     let bin_path = ensure_binary(svr.binary)?;
-    let root = find_root(file_path, svr.needs_lockfile);
+    let root = find_root(file_path, svr.root_mode);
     let language_id = svr.language_id;
     let content = tokio::fs::read_to_string(file_path)
         .await
@@ -253,7 +253,7 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
     for svr in servers {
         let sid = svr.id.to_string();
         let _ = ensure_binary(svr.binary);
-        let root = find_root(file_path, svr.needs_lockfile);
+        let root = find_root(file_path, svr.root_mode);
 
         let session = {
             let mut s = state().lock().unwrap();
@@ -440,9 +440,9 @@ async fn process_message(msg: &serde_json::Value, diags: &Arc<Mutex<Vec<Diagnost
     }
 }
 
-fn find_root(file_path: &str, needs_lockfile: bool) -> String {
+fn find_root(file_path: &str, root_mode: server::RootMode) -> String {
     let workspace = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
-    if !needs_lockfile {
+    if root_mode == server::RootMode::Workspace {
         return workspace.to_string_lossy().to_string();
     }
 
@@ -468,11 +468,18 @@ fn find_root(file_path: &str, needs_lockfile: bool) -> String {
     let mut current = Some(dir);
     while let Some(d) = current {
         if markers.iter().any(|m| d.join(m).exists()) {
+            if root_mode == server::RootMode::ProjectOrDir && d == workspace {
+                return dir.to_string_lossy().to_string();
+            }
             return d.to_string_lossy().to_string();
         }
         current = d.parent();
     }
-    workspace.to_string_lossy().to_string()
+    match root_mode {
+        server::RootMode::Project => workspace.to_string_lossy().to_string(),
+        server::RootMode::ProjectOrDir => dir.to_string_lossy().to_string(),
+        server::RootMode::Workspace => unreachable!(),
+    }
 }
 
 /// Build LSP request params for a position. Shared by server.rs and mcp.rs.
@@ -506,6 +513,11 @@ pub fn list_servers() -> Vec<serde_json::Value> {
                 "language_id": s.language_id,
                 "extensions": s.extensions,
                 "binary": s.binary,
+                "root_mode": match s.root_mode {
+                    server::RootMode::Workspace => "workspace",
+                    server::RootMode::Project => "project",
+                    server::RootMode::ProjectOrDir => "project_or_dir",
+                },
             })
         })
         .collect()
