@@ -119,11 +119,12 @@ Project dependencies still use the repository's existing lockfile/package manage
 
 Keep context small and semantic:
 
-1. `ls`/`find` to identify the relevant project area.
-2. `documentSymbol` for file structure or `workspace/symbol` for named concepts.
-3. `hover` + `definition`/`implementation` for contracts and behavior.
-4. `references` before changing public/shared code.
-5. `read` only relevant implementations and nearby tests.
+1. In a monorepo, identify the likely project/service directory with `ls`/narrow `find` before content search. Never begin with workspace-wide `grep` for a common term.
+2. Scope `find`/`grep` to that directory; if output says truncated, narrow again rather than consuming or acting on partial results.
+3. `documentSymbol` for file structure or `workspace/symbol` for named concepts.
+4. `hover` + `definition`/`implementation` for contracts and behavior.
+5. `references` before changing public/shared code.
+6. `read` only relevant implementations and nearby tests.
 
 Avoid dumping entire repositories, generated files, lockfiles, dependency trees, or huge reference lists into context.
 

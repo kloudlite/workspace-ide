@@ -15,6 +15,20 @@ function localPath(path: string): string {
   return path.includes("/") ? path : join(tmpdir(), path);
 }
 
+function compactLspResult(result: any): any {
+  if (Array.isArray(result) && result.length > 200) {
+    return { items: result.slice(0, 200), truncated: true, total: result.length, message: "Narrow the query before acting." };
+  }
+  if (Array.isArray(result?.items) && result.items.length > 200) {
+    return { ...result, items: result.items.slice(0, 200), truncated: true, total: result.items.length };
+  }
+  const size = JSON.stringify(result).length;
+  if (size > 1_000_000) {
+    return { truncated: true, size, message: "LSP result too large to use safely; narrow the file, symbol, or range." };
+  }
+  return result;
+}
+
 function postJson(url: string, body: unknown, signal?: AbortSignal): Promise<any> {
   return fetch(url, {
     method: "POST",
@@ -128,7 +142,8 @@ export function createWsTools(config: WsConfig) {
       execute: async (_id, params: { pattern: string; path?: string }, signal) => {
         const body: Record<string, string> = { pattern: params.pattern, ...(params.path ? { path: params.path } : {}) };
         const r: any = await postJson(`${base}/grep`, body, signal);
-        const text = (r.matches || []).map((m: any) => `${m.path}:${m.line_number}: ${m.text}`).join("\n");
+        const matches = (r.matches || []).map((m: any) => `${m.path}:${m.line_number}: ${m.text}`).join("\n");
+        const text = matches + (r.truncated ? "\n[truncated at 200 matches; narrow path or pattern]" : "");
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -143,7 +158,8 @@ export function createWsTools(config: WsConfig) {
       execute: async (_id, params: { path: string; name?: string }, signal) => {
         const body: Record<string, string> = { path: params.path, ...(params.name ? { name: params.name } : {}) };
         const r: any = await postJson(`${base}/find`, body, signal);
-        return { content: [{ type: "text", text: (r.files || []).join("\n") }], details: {} };
+        const text = (r.files || []).join("\n") + (r.truncated ? "\n[truncated at 200 files; narrow path or pattern]" : "");
+        return { content: [{ type: "text", text }], details: {} };
       },
     }),
     defineTool({
@@ -276,7 +292,7 @@ export function createWsTools(config: WsConfig) {
       }),
       execute: async (_id, params: Record<string, any>, signal) => {
         const r: any = await postJson(`${base}/lsp/request`, params, signal);
-        const text = JSON.stringify(r.result ?? r);
+        const text = JSON.stringify(compactLspResult(r.result ?? r));
         return { content: [{ type: "text", text }], details: {} };
       },
     }),

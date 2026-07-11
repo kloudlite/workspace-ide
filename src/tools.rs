@@ -45,11 +45,13 @@ pub struct GrepMatch {
 #[derive(Serialize)]
 pub struct GrepResult {
     pub matches: Vec<GrepMatch>,
+    pub truncated: bool,
 }
 
 #[derive(Serialize)]
 pub struct FindResult {
     pub files: Vec<String>,
+    pub truncated: bool,
 }
 
 #[derive(Serialize)]
@@ -258,8 +260,10 @@ pub async fn grep_files(pattern: &str, search_path: Option<&str>) -> Result<Grep
 
     // ponytail: splitn(3,':') assumes path:line:text; breaks if path contains ':'
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let matches: Vec<GrepMatch> = stdout
-        .lines()
+    let mut lines = stdout.lines();
+    let matches: Vec<GrepMatch> = lines
+        .by_ref()
+        .take(200)
         .filter_map(|line| {
             let mut parts = line.splitn(3, ':');
             let path = parts.next()?;
@@ -272,8 +276,9 @@ pub async fn grep_files(pattern: &str, search_path: Option<&str>) -> Result<Grep
             })
         })
         .collect();
+    let truncated = lines.next().is_some();
 
-    Ok(GrepResult { matches })
+    Ok(GrepResult { matches, truncated })
 }
 
 pub async fn find_files(path: &str, name: Option<&str>) -> Result<FindResult, ToolError> {
@@ -290,8 +295,10 @@ pub async fn find_files(path: &str, name: Option<&str>) -> Result<FindResult, To
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let output = cmd.output().await?;
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let files: Vec<String> = stdout.lines().map(|s| s.to_string()).collect();
-    Ok(FindResult { files })
+    let mut lines = stdout.lines();
+    let files: Vec<String> = lines.by_ref().take(200).map(|s| s.to_string()).collect();
+    let truncated = lines.next().is_some();
+    Ok(FindResult { files, truncated })
 }
 
 // --- Background process sessions ---
