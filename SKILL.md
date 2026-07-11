@@ -128,7 +128,7 @@ Use the repository's existing package manager for project dependencies (`pnpm`, 
 
 ## Audit/review budget
 
-For repo-wide audits, scope the codebase to tracked source/config (`git ls-files`) by default; ignored/generated/build/untracked artifacts do not count unless cleanup is requested. Use bounded inventories/searches for breadth, inspect at most 20 strongest candidates with ranged reads, require concrete evidence, report at most 10 findings, and stop. Grep accepts one directory path, not a space-separated path list. Never ingest the repository or repeat equivalent searches.
+For repo-wide audits, scope the codebase to tracked source/config (`git ls-files`) by default; ignored/generated/build/untracked artifacts do not count unless cleanup is requested. Use bounded inventories/searches for breadth, but verify claims that symbols/interfaces/helpers are dead, duplicated, single-implementation, or removable with LSP references/definition/implementation—grep counts are not semantic proof. Inspect at most 20 strongest candidates with ranged reads, require concrete evidence, report at most 10 findings, and stop. Grep accepts one directory path, not a space-separated path list. Never ingest the repository or repeat equivalent searches.
 
 ## Verification ladder
 

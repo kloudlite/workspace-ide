@@ -441,9 +441,6 @@ fn find_root(file_path: &str, root_mode: server::RootMode) -> String {
     let mut current = Some(dir);
     while let Some(d) = current {
         if markers.iter().any(|m| d.join(m).exists()) {
-            if root_mode == server::RootMode::ProjectOrDir && d == workspace {
-                return dir.to_string_lossy().to_string();
-            }
             return d.to_string_lossy().to_string();
         }
         current = d.parent();
