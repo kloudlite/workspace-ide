@@ -40,9 +40,17 @@ pub fn router() -> Router {
         .route("/kill", post(kill_handler))
         .route("/sessions", get(sessions_handler))
         .route("/pkg/install", post(pkg_install_handler))
+        .route(
+            "/pkg/install/background",
+            post(pkg_install_background_handler),
+        )
         .route("/pkg/search", post(pkg_search_handler))
         .route("/pkg/list", post(pkg_list_handler))
         .route("/pkg/remove", post(pkg_remove_handler))
+        .route(
+            "/pkg/remove/background",
+            post(pkg_remove_background_handler),
+        )
         .route("/lsp/diagnose", post(lsp_diagnose_handler))
         .route("/lsp/sessions", get(lsp_sessions_handler))
         .route("/lsp/request", post(lsp_request_handler))
@@ -196,6 +204,46 @@ async fn pkg_install_handler(
         Ok(msg) => Ok(Json(serde_json::json!({ "ok": true, "msg": msg }))),
         Err(e) => Err(err(StatusCode::BAD_REQUEST, e)),
     }
+}
+
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+async fn pkg_install_background_handler(
+    Json(req): Json<Value>,
+) -> Result<Json<tools::SpawnResult>, (StatusCode, Json<ErrorResponse>)> {
+    let package = get_str(&req, "package")?;
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok())
+        .unwrap_or_else(|| "ws".into());
+    tools::spawn_bash(&format!(
+        "{} pkg install {}",
+        sh_quote(&exe),
+        sh_quote(package)
+    ))
+    .await
+    .map(Json)
+    .map_err(|e| err(StatusCode::BAD_REQUEST, e.0))
+}
+
+async fn pkg_remove_background_handler(
+    Json(req): Json<Value>,
+) -> Result<Json<tools::SpawnResult>, (StatusCode, Json<ErrorResponse>)> {
+    let package = get_str(&req, "package")?;
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok())
+        .unwrap_or_else(|| "ws".into());
+    tools::spawn_bash(&format!(
+        "{} pkg remove {}",
+        sh_quote(&exe),
+        sh_quote(package)
+    ))
+    .await
+    .map(Json)
+    .map_err(|e| err(StatusCode::BAD_REQUEST, e.0))
 }
 
 async fn pkg_search_handler(

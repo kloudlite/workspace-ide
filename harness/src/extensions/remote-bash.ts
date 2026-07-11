@@ -118,12 +118,15 @@ function createRemoteAutocompleteProvider(inner: AutocompleteProvider): Autocomp
     },
 
     applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
+      if (!prefix.startsWith("@")) {
+        return inner.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+      }
       // Insert the full remote path after stripping @ prefix from the current token
       const line = lines[cursorLine] || "";
       const beforeCursor = line.slice(0, cursorCol);
       const afterCursor = line.slice(cursorCol);
       const atIdx = beforeCursor.lastIndexOf("@");
-      if (atIdx === -1) return { lines, cursorLine, cursorCol };
+      if (atIdx === -1) return inner.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
 
       const newLine = beforeCursor.slice(0, atIdx) + item.value + afterCursor;
       lines[cursorLine] = newLine;
