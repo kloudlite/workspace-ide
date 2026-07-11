@@ -327,7 +327,7 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
         *session.stdin.lock().unwrap() = owned;
 
         let mut published = None;
-        for _ in 0..50 {
+        for _ in 0..600 {
             if let Some(diags) = session.diags.lock().unwrap().get(file_path).cloned() {
                 published = Some(diags);
                 break;
@@ -400,7 +400,7 @@ async fn start_server(
         }
     });
 
-    send_initialize(&mut stdin).await?;
+    send_initialize(&mut stdin, root).await?;
     tokio::time::sleep(Duration::from_secs(3)).await;
     Ok((child, stdin, diags_arc))
 }
@@ -430,11 +430,13 @@ async fn write_msg(stdin: &mut ChildStdin, msg: &serde_json::Value) {
     let _ = stdin.flush().await;
 }
 
-async fn send_initialize(stdin: &mut ChildStdin) -> Result<(), String> {
+async fn send_initialize(stdin: &mut ChildStdin, root: &str) -> Result<(), String> {
     let msg = serde_json::json!({
         "jsonrpc": "2.0", "id": 1, "method": "initialize",
         "params": {
             "processId": std::process::id(),
+            "rootUri": format!("file://{}", root),
+            "workspaceFolders": [{ "uri": format!("file://{}", root), "name": "workspace" }],
             "clientInfo": { "name": "ws", "version": "0.1.0" },
             "capabilities": {
                 "textDocument": {
