@@ -45,6 +45,7 @@ pub fn router() -> Router {
         .route("/pkg/remove", post(pkg_remove_handler))
         .route("/lsp/diagnose", post(lsp_diagnose_handler))
         .route("/lsp/sessions", get(lsp_sessions_handler))
+        .route("/lsp/servers", get(lsp_servers_handler))
         .route("/lsp/request", post(lsp_request_handler))
         .route("/lsp/reconcile", post(lsp_reconcile_handler))
         .route("/fs/tree", post(fs_tree_handler))
@@ -239,6 +240,10 @@ async fn lsp_diagnose_handler(
 
 async fn lsp_sessions_handler() -> Json<Value> {
     Json(serde_json::json!(lsp::list_sessions()))
+}
+
+async fn lsp_servers_handler() -> Json<Value> {
+    Json(serde_json::json!(lsp::list_servers()))
 }
 
 async fn lsp_reconcile_handler() -> Json<Value> {

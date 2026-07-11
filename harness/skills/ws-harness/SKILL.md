@@ -7,7 +7,7 @@ description: Use when working with a remote workspace via ws-pi — file operati
 
 ## ⚠️ CRITICAL: THIS IS REMOTE ONLY
 
-All 19 tools talk to the **remote workspace server** via HTTP API. Workspace paths are remote. `upload` is the only tool that reads a local source file.
+All 21 tools talk to the **remote workspace server** via HTTP API. Workspace paths are remote. `upload` is the only tool that reads a local source file.
 
 - The cwd is `/workspace` — pi tells the agent it works at `/workspace`, so it naturally uses `/workspace` paths.
 - You don't need path remapping. Use workspace-relative paths normally.
@@ -59,6 +59,8 @@ All 19 tools talk to the **remote workspace server** via HTTP API. Workspace pat
 
 | Tool | Parameters | Behaviour |
 |------|-----------|-----------|
+| `lsp_servers` | `{}` | Lists available LSP servers and supported extensions. Use this for “which LSPs are available?” |
+| `lsp_sessions` | `{}` | Lists running LSP server sessions. Use this for “which LSP servers are running?” |
 | `lsp` | `{ method, path, line, column }` | Methods: `textDocument/hover`, `textDocument/definition`, `textDocument/references`, `textDocument/completion`. Line/col are **0-indexed**. |
 | `diagnose` | `{ path }` | Returns errors/warnings/hints. `[]` = clean. |
 

@@ -490,6 +490,20 @@ pub fn list_sessions() -> Vec<(String, String)> {
         .collect()
 }
 
+pub fn list_servers() -> Vec<serde_json::Value> {
+    server::SERVERS
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "id": s.id,
+                "language_id": s.language_id,
+                "extensions": s.extensions,
+                "binary": s.binary,
+            })
+        })
+        .collect()
+}
+
 /// Scan workspace for files with known LSP extensions, call f for each match.
 pub fn walk_files(dir: &Path, f: &mut dyn FnMut(&Path)) {
     let entries = match std::fs::read_dir(dir) {

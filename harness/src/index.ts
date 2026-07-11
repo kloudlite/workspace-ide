@@ -212,6 +212,32 @@ export function createWsTools(config: WsConfig) {
 
     // --- LSP ---
     defineTool({
+      name: "lsp_servers",
+      label: "LSP Servers",
+      description: "List available LSP servers and supported file extensions",
+      parameters: Type.Object({}),
+      execute: async (_id, _params: {}, signal) => {
+        const resp = await fetch(`${base}/lsp/servers`, { signal });
+        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}: ${await resp.text()}`);
+        const r = await resp.json();
+        const text = (r || []).map((s: any) => `${s.id} (${s.language_id}): ${s.extensions.join(", ")}`).join("\n") || "(none)";
+        return { content: [{ type: "text", text }], details: {} };
+      },
+    }),
+    defineTool({
+      name: "lsp_sessions",
+      label: "LSP Sessions",
+      description: "List running LSP server sessions on the remote workspace",
+      parameters: Type.Object({}),
+      execute: async (_id, _params: {}, signal) => {
+        const resp = await fetch(`${base}/lsp/sessions`, { signal });
+        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}: ${await resp.text()}`);
+        const r = await resp.json();
+        const text = (r || []).map(([server, root]: [string, string]) => `${server}  ${root}`).join("\n") || "(none)";
+        return { content: [{ type: "text", text }], details: {} };
+      },
+    }),
+    defineTool({
       name: "lsp",
       label: "LSP",
       description: "Query language server on the remote workspace (hover, definition, references, completion)",

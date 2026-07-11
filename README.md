@@ -34,7 +34,7 @@ ws-pi --list                                       # list past sessions
 
 Sessions are persisted in `~/.ws-sessions/<hash-of-server-url>/` — each server connection gets isolated session history. Default: continues the most recent session.
 
-### 19 remote tools
+### 21 remote tools
 
 All tool calls are HTTP requests to the ws server. No local filesystem access.
 
@@ -53,6 +53,8 @@ All tool calls are HTTP requests to the ws server. No local filesystem access.
 | `status` | `/status` | Check spawn status |
 | `kill` | `/kill` | Kill spawn (kills process group, no orphans) |
 | `sessions` | `/sessions` | List all background sessions |
+| `lsp_servers` | `/lsp/servers` | List available LSP servers/extensions |
+| `lsp_sessions` | `/lsp/sessions` | List running LSP sessions |
 | `lsp` | `/lsp/request` | LSP hover/definition/references/completion |
 | `diagnose` | `/lsp/diagnose` | LSP diagnostics for a file |
 | `pkg_install` | `/pkg/install` | Install a package in foreground |
