@@ -51,6 +51,8 @@ Positions are **0-indexed** and must land on the identifier token.
 - For definitions, implementations, types, references, signatures, and renames: LSP first.
 - For literals, comments, log messages, config keys, generated text, or unsupported files: `grep` is correct.
 - Use `read` for surrounding implementation context and exact edit text, not as a substitute for symbol intelligence.
+- Do not call `lsp_servers` as routine preflight; methods auto-select by file. Use it only when asked about availability or after an unsupported/failing request.
+- Do not call symbols/navigation methods when an explicit target plus diagnostics/source already establishes the needed edit. Every semantic call should answer a concrete uncertainty.
 - If LSP fails or returns empty: verify support with `lsp_servers`, retry once after warmup, then fall back to `grep`/`read` and state the fallback.
 - First request on a large project may be slow; warm sessions are reused and should remain running.
 
@@ -124,7 +126,7 @@ Avoid dumping entire repositories, generated files, lockfiles, dependency trees,
 
 ## Verification ladder
 
-Stop at the first set of checks that convincingly covers the change:
+Stop at the first set of checks that convincingly covers the change; do not repeat equivalent checks after they pass:
 
 1. `diagnose` changed files.
 2. Focused formatter/linter/type-check for changed scope.
