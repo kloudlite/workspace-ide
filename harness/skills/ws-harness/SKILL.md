@@ -57,6 +57,15 @@ All 21 tools talk to the **remote workspace server** via HTTP API. Workspace pat
 
 ### LSP
 
+#### Code-intelligence routing rule
+
+For questions like “what is this symbol/type/function?”, “where is this defined?”, “who references this?”, “what completions are available?”, or “what does hover say?” on a supported code file, use LSP.
+
+- If the user gives a file + line/column: call `lsp` directly. Do not `read`/`grep` first.
+- If the user gives a file + symbol but no line: use `grep` only to locate the symbol line, then call `lsp textDocument/hover` on that symbol. Do not answer from `grep` alone.
+- For definitions and references: use `lsp textDocument/definition` / `textDocument/references`, not `grep`, unless LSP fails or the file type is unsupported.
+- Use `read` only when you need surrounding source after LSP, or before editing.
+
 | Tool | Parameters | Behaviour |
 |------|-----------|-----------|
 | `lsp_servers` | `{}` | Lists available LSP servers and supported extensions. Use this for “which LSPs are available?” |
@@ -64,7 +73,7 @@ All 21 tools talk to the **remote workspace server** via HTTP API. Workspace pat
 | `lsp` | `{ method, path, line, column }` | Methods: `textDocument/hover`, `textDocument/definition`, `textDocument/references`, `textDocument/completion`. Line/col are **0-indexed**. |
 | `diagnose` | `{ path }` | Returns errors/warnings/hints. `[]` = clean. |
 
-**Best practice:** Always `diagnose` first when helping with compilation errors, and again after every file change that LSP can check. First LSP request can be slow (gopls indexing takes 30s+). If LSP returns empty, check if file extension is supported (Go, Rust, TS, Python, C/C++, Lua, Bash, YAML, JSON).
+**Best practice:** For code-intelligence questions about a symbol/type/function/definition/references/completions/hover, use `lsp` first; only `read`/`grep` if LSP is unsupported, empty, or you need surrounding source. Always `diagnose` first when helping with compilation errors, and again after every file change that LSP can check. First LSP request can be slow (gopls indexing takes 30s+). If LSP returns empty, check if file extension is supported (Go, Rust, TS, Python, C/C++, Lua, Bash, YAML, JSON).
 
 ### Package Management
 
@@ -94,7 +103,15 @@ diagnose src/main.go           # confirm clean
 ```
 ls /workspace
 read path/to/module/main.go
-grep "InterestingFunc" /workspace
+```
+
+### Answer “what is this symbol?”
+```
+# With line/column from the user: go straight to LSP
+lsp textDocument/hover path/to/main.go 42 10
+
+# With only a symbol name: grep only to find the line, then LSP hover
+grep "type InterestingType" path/to/main.go
 lsp textDocument/hover path/to/main.go 42 10
 ```
 

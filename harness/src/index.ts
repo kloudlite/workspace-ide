@@ -36,7 +36,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "read",
       label: "Read",
-      description: "Read a file from the remote workspace",
+      description: "Read file text from the remote workspace. Do NOT use for symbol/type/function meaning, hover, definition, references, or completion when LSP supports the file; use lsp first for code intelligence.",
       parameters: Type.Object({ path: Type.String({ description: "File path" }) }),
       execute: async (_id, params: { path: string }, signal) => {
         const r: any = await postJson(`${base}/read`, { path: params.path }, signal);
@@ -113,7 +113,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "grep",
       label: "Grep",
-      description: "Search for a pattern in files on the remote workspace (recursive, case-sensitive)",
+      description: "Search file text on the remote workspace. Do NOT use for definition/references when LSP supports the file; use lsp first for code intelligence.",
       parameters: Type.Object({
         pattern: Type.String({ description: "Search pattern" }),
         path: Type.Optional(Type.String({ description: "Directory to search (default: cwd)" })),
@@ -240,7 +240,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "lsp",
       label: "LSP",
-      description: "Query language server on the remote workspace (hover, definition, references, completion)",
+      description: "Preferred tool for code intelligence: symbol/type/function meaning, hover docs, definition, references, and completion. Use this before read/grep for supported code files.",
       parameters: Type.Object({
         method: Type.Union(
           [Type.Literal("textDocument/hover"), Type.Literal("textDocument/definition"),
