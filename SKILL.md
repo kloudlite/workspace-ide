@@ -1,6 +1,6 @@
 ---
 name: ws-cli
-description: Use the ws CLI for remote headless-IDE development: semantic LSP navigation/refactoring, diagnostics, file edits, shell verification, background sessions, and workspace package tools.
+description: "Use the ws CLI for remote headless-IDE development: semantic LSP navigation/refactoring, diagnostics, file edits, shell verification, background sessions, and workspace package tools."
 ---
 
 # ws CLI

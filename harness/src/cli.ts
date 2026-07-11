@@ -13,8 +13,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createWsTools } from "./index.js";
 
-// ponytail: resolve skill/extension dirs relative to this file via URL (no path/url imports needed)
-const distDir = new URL(".", import.meta.url).pathname; // dist/
+// ponytail: resolve bundled resources relative to this file
+const extensionPath = new URL("./extensions/remote-bash.js", import.meta.url).pathname;
 const skillDir = new URL("../skills/ws-harness", import.meta.url).pathname;
 
 // ponytail: CLI parsing by hand — no clap/yargs dep
@@ -101,7 +101,7 @@ async function main() {
       resourceLoaderOptions: {
         noExtensions: true,
         additionalSkillPaths: [skillDir],
-        additionalExtensionPaths: [distDir],
+        additionalExtensionPaths: [extensionPath],
         appendSystemPrompt: [
           "A user message wrapped in <skill name=\"...\"> is an explicit /skill invocation. Immediately execute the skill instructions against the current remote workspace. Do not merely acknowledge, say it was loaded, ask the user to invoke it again, or wait for a second request. Skill arguments, when present, appear after the skill content as User: ...",
           "For repository-wide audits/reviews, scope the codebase to tracked source/config (`git ls-files`) by default; ignore generated, build, ignored, and untracked workspace artifacts unless cleanup is explicitly requested, and never count them in code-reduction totals. Scan breadth through bounded inventories/searches, then inspect only the strongest candidate files with ranged read offset/limit. Do not ingest the repository. Avoid repeated equivalent searches, require concrete evidence for every finding, inspect at most 20 candidate files, report at most 10 highest-impact findings, then stop.",
