@@ -15,6 +15,15 @@ function localPath(path: string): string {
   return path.includes("/") ? path : join(tmpdir(), path);
 }
 
+function rangedText(content: string, offset = 1, limit = 400) {
+  const lines = content.split(/\r?\n/);
+  const start = Math.max(1, offset);
+  const selected = lines.slice(start - 1, start - 1 + limit);
+  const truncated = start - 1 + selected.length < lines.length;
+  const suffix = truncated ? `\n[lines ${start}-${start + selected.length - 1} of ${lines.length}; continue with offset=${start + selected.length}]` : "";
+  return { text: selected.join("\n") + suffix, lines: selected.length, totalLines: lines.length, truncated };
+}
+
 function compactLspResult(result: any): any {
   if (Array.isArray(result) && result.length > 200) {
     return { items: result.slice(0, 200), truncated: true, total: result.length, message: "Narrow the query before acting." };
@@ -52,16 +61,22 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "read",
       label: "Read",
-      description: "Read file text from the remote workspace. Do NOT use for symbol/type/function meaning, hover, definition, references, or completion when LSP supports the file; use lsp first for code intelligence.",
-      parameters: Type.Object({ path: Type.String({ description: "File path" }) }),
-      execute: async (_id, params: { path: string }, signal) => {
+      description: "Read file text, defaulting to at most 400 lines. Use offset/limit to continue large files. Use LSP first for symbol intelligence.",
+      parameters: Type.Object({
+        path: Type.String({ description: "File path" }),
+        offset: Type.Optional(Type.Number({ description: "First line, 1-indexed (default 1)" })),
+        limit: Type.Optional(Type.Number({ description: "Maximum lines (default 400)" })),
+      }),
+      execute: async (_id, params: { path: string; offset?: number; limit?: number }, signal) => {
         const path = resolve(params.path);
         if (config.localSkillDirs?.some((dir) => path === resolve(dir) || path.startsWith(resolve(dir) + sep))) {
           const content = await readFile(path, "utf8");
-          return { content: [{ type: "text", text: content }], details: { size: content.length, skill: true } };
+          const ranged = rangedText(content, params.offset, params.limit);
+          return { content: [{ type: "text", text: ranged.text }], details: { size: content.length, skill: true, ...ranged } };
         }
-        const r: any = await postJson(`${base}/read`, { path: params.path }, signal);
-        return { content: [{ type: "text", text: r.content }], details: { size: r.size, skill: false } };
+        const r: any = await postJson(`${base}/read`, { path: params.path, offset: params.offset ?? 1, limit: params.limit ?? 400 }, signal);
+        const suffix = r.truncated ? `\n[lines ${r.offset}-${r.offset + r.lines - 1} of ${r.total_lines}; continue with offset=${r.offset + r.lines}]` : "";
+        return { content: [{ type: "text", text: r.content + suffix }], details: { size: r.size, skill: false, truncated: r.truncated } };
       },
     }),
     defineTool({

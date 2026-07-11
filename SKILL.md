@@ -38,7 +38,7 @@ Minimal is not negligent: preserve trust-boundary validation, data-loss protecti
 ## Files
 
 ```bash
-ws read <path>
+ws read <path>                    # CLI reads whole file; HTTP/MCP accept offset/limit
 ws edit <path> <old> <new>
 ws write <path> <content>
 ws upload <local> <remote>
@@ -47,7 +47,7 @@ ws find <path> --name '<glob>'
 ws grep <pattern> [path]
 ```
 
-Use `read` before exact-text `edit`. Prefer `edit` for small changes; `write` replaces the whole file. After code/config mutation, run `diagnose` when supported. `grep`/`find` return at most 200 results; grep snippets are capped at 500 characters. If truncated, narrow the path/pattern instead of treating output as complete.
+Use `read` before exact-text `edit`. Prefer `edit` for small changes; `write` replaces the whole file. After code/config mutation, run `diagnose` when supported. HTTP/MCP ranged reads use 1-indexed `offset`/`limit`; ws-pi defaults to 400 lines. `grep`/`find` return at most 200 results; grep snippets are capped at 500 characters. If truncated, narrow the range/path/pattern instead of treating output as complete.
 
 ## LSP
 
@@ -125,6 +125,10 @@ ws pkg sync
 ```
 
 Use the repository's existing package manager for project dependencies (`pnpm`, `npm`, `bun`, `cargo`, `go mod`, etc.). Do not introduce a new dependency or package manager without need. Commit `ws.yaml` and `ws.lock` when package state changes.
+
+## Audit/review budget
+
+For repo-wide audits, use bounded inventories/searches for breadth, inspect at most 20 strongest candidates with ranged reads, require concrete evidence, report at most 10 findings, and stop. Never ingest the repository or repeat equivalent searches.
 
 ## Verification ladder
 

@@ -57,7 +57,15 @@ async fn read_handler(
     Json(req): Json<Value>,
 ) -> Result<Json<tools::ReadResult>, (StatusCode, Json<ErrorResponse>)> {
     let path = get_str(&req, "path")?;
-    tools::read_file(path)
+    let offset = req
+        .get("offset")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
+    let limit = req
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
+    tools::read_file(path, offset, limit)
         .await
         .map(Json)
         .map_err(|e| err(StatusCode::BAD_REQUEST, e.0))

@@ -64,7 +64,7 @@ Every other path is remote and relative paths resolve under `/workspace`.
 
 | Tool | Endpoint | Purpose |
 |---|---|---|
-| `read` | `POST /read` | Read exact source/context |
+| `read` | `POST /read` | Read exact source/context with optional line range |
 | `edit` | `POST /edit` | Exact-text replacement |
 | `write` | `POST /write` | Create or replace a complete file |
 | `upload` | `POST /upload` | Upload local bytes |
@@ -88,8 +88,9 @@ Every other path is remote and relative paths resolve under `/workspace`.
 
 ### Bounded context
 
-Search results are intentionally bounded:
+Tool output is intentionally bounded:
 
+- `read`: `ws-pi` defaults to 400 lines and returns a continuation offset; explicit `offset`/`limit` select a 1-indexed line range;
 - `grep`: at most 200 matches and 500 characters per matching line;
 - `find`: at most 200 files;
 - oversized LSP arrays: first 200 items with explicit truncation metadata;
@@ -167,7 +168,8 @@ The bundled [`ws-harness` skill](harness/skills/ws-harness/SKILL.md) teaches pi 
 - diagnose every changed supported file;
 - preserve command failures instead of masking them with `|| true`;
 - stop after focused verification passes;
-- distinguish tracked from untracked files when reviewing changes.
+- distinguish tracked from untracked files when reviewing changes;
+- keep repo-wide audits bounded: inventory/search for breadth, inspect at most 20 strongest files with ranged reads, and report at most 10 evidence-backed findings.
 
 Recommended loop:
 

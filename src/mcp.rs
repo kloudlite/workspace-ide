@@ -125,7 +125,16 @@ fn tool_str(name: &str, desc: &str, field: &str) -> Value {
 
 fn tool_definitions() -> Vec<Value> {
     vec![
-        tool_str("read", "Read file contents", "path"),
+        tool(
+            "read",
+            "Read file contents with optional 1-indexed line range",
+            json!({
+                "path": { "type": "string", "description": "File path" },
+                "offset": { "type": "number", "description": "First line, 1-indexed" },
+                "limit": { "type": "number", "description": "Maximum lines" },
+            }),
+            &["path"],
+        ),
         tool(
             "bash",
             "Execute a shell command",
@@ -224,7 +233,15 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<Value, String> {
     match name {
         "read" => {
             let path = get_str(args, "path")?;
-            tools::read_file(path)
+            let offset = args
+                .get("offset")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
+            let limit = args
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
+            tools::read_file(path, offset, limit)
                 .await
                 .map(|r| json!(r))
                 .map_err(|e| e.0)

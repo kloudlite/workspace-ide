@@ -15,6 +15,10 @@ pub struct EditOp {
 pub struct ReadResult {
     pub content: String,
     pub size: u64,
+    pub offset: usize,
+    pub lines: usize,
+    pub total_lines: usize,
+    pub truncated: bool,
 }
 
 #[derive(Serialize)]
@@ -116,10 +120,40 @@ impl From<std::io::Error> for ToolError {
 
 // --- Tool implementations ---
 
-pub async fn read_file(path: &str) -> Result<ReadResult, ToolError> {
-    let content = tokio::fs::read_to_string(path).await?;
-    let size = content.len() as u64;
-    Ok(ReadResult { content, size })
+pub async fn read_file(
+    path: &str,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<ReadResult, ToolError> {
+    let full = tokio::fs::read_to_string(path).await?;
+    let size = full.len() as u64;
+    let total_lines = full.lines().count();
+    let offset = offset.unwrap_or(1).max(1);
+
+    if offset == 1 && limit.is_none() {
+        return Ok(ReadResult {
+            content: full,
+            size,
+            offset,
+            lines: total_lines,
+            total_lines,
+            truncated: false,
+        });
+    }
+
+    let limit = limit.unwrap_or(total_lines);
+    let selected: Vec<&str> = full.lines().skip(offset - 1).take(limit).collect();
+    let lines = selected.len();
+    let truncated = offset - 1 + lines < total_lines;
+    let content = selected.join("\n");
+    Ok(ReadResult {
+        content,
+        size,
+        offset,
+        lines,
+        total_lines,
+        truncated,
+    })
 }
 
 pub async fn run_bash(command: &str, timeout_secs: Option<u64>) -> BashResult {
@@ -689,4 +723,24 @@ pub async fn fs_status() -> Result<FsStatusResult, ToolError> {
         changes,
         ignored_patterns,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_file;
+
+    #[tokio::test]
+    async fn reads_bounded_line_ranges() {
+        let path = std::env::temp_dir().join("ws-read-range-test.txt");
+        tokio::fs::write(&path, "one\ntwo\nthree\nfour\n")
+            .await
+            .unwrap();
+        let result = read_file(path.to_str().unwrap(), Some(2), Some(2))
+            .await
+            .unwrap();
+        assert_eq!(result.content, "two\nthree");
+        assert_eq!(result.total_lines, 4);
+        assert!(result.truncated);
+        let _ = tokio::fs::remove_file(path).await;
+    }
 }

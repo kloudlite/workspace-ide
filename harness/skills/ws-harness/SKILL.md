@@ -122,7 +122,7 @@ LSP rename, code-action, and formatting responses are previews; file mutation re
 
 | Tool | Use |
 |---|---|
-| `read` | Exact source/context before editing |
+| `read` | Exact source/context before editing; defaults to 400 lines, continue with `offset`/`limit` |
 | `edit` | Small exact-text replacement; preferred mutation tool |
 | `write` | New file or intentional whole-file replacement |
 | `upload` | Local binary/image to remote workspace |
@@ -165,6 +165,10 @@ Keep context small and semantic:
 6. `read` only relevant implementations and nearby tests.
 
 Avoid dumping entire repositories, generated files, lockfiles, dependency trees, or huge reference lists into context.
+
+### Audit/review budget
+
+For whole-repository audits, breadth comes from bounded inventory/search—not reading every file. Rank candidates, inspect at most 20 strongest files with ranged `read`, require concrete evidence per finding, return at most 10 highest-impact findings, and stop. Do not repeat equivalent grep/bash searches or read whole large files when a matching range is enough.
 
 ## Verification ladder
 
