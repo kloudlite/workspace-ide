@@ -1,169 +1,187 @@
 ---
 name: ws-harness
-description: Use when working with a remote workspace via ws-pi — file operations, shell commands, package management, LSP diagnostics, and background sessions are backed by a remote ws HTTP server.
+description: Use for all development in ws-pi's remote workspace. Covers semantic LSP navigation and refactoring, diagnostics, minimal file edits, shell verification, package tools, background processes, and evidence-based completion.
 ---
 
-# ws-harness — Remote Workspace Agent
+# ws-harness — Remote IDE Workflow
 
-## ⚠️ CRITICAL: THIS IS REMOTE ONLY
+## Remote boundary
 
-All 21 tools talk to the **remote workspace server** via HTTP API. Workspace paths are remote. `upload` is the only tool that reads a local source file.
+All tools operate on the remote server and `/workspace`; relative paths resolve there. `upload` alone reads a local file. Never try to read local skill paths through remote `read`.
 
-- The cwd is `/workspace` — pi tells the agent it works at `/workspace`, so it naturally uses `/workspace` paths.
-- You don't need path remapping. Use workspace-relative paths normally.
+## Core development loop
 
-### File Operations
+Use the shortest loop that proves the change:
 
-| Tool | Parameters | Behaviour |
-|------|-----------|-----------|
-| `read` | `{ path }` | Returns file content + size. Use before edit to get exact text. |
-| `write` | `{ path, content }` | Creates text file (incl. parent dirs) or overwrites entirely. |
-| `upload` | `{ local_path, remote_path }` | Uploads a local file to the remote workspace. For pasted images, use the displayed `pi-clipboard-...` filename as `local_path`. |
-| `edit` | `{ path, oldText, newText }` | Exact-text replacement — whitespace matters! One edit per call. |
-| `ls` | `{ path }` | Lists entries with `name`, `is_dir`, `size`. |
+1. **Explore semantically** — discover symbols, definitions, types, implementations, and references with `lsp`.
+2. **Plan impact** — identify affected symbols/files and existing project patterns before editing.
+3. **Edit minimally** — `read` exact source, then `edit`; avoid whole-file `write` unless replacing the whole file is genuinely simpler.
+4. **Check immediately** — run `diagnose` on every changed supported code/config file.
+5. **Verify behavior** — run the narrowest relevant formatter, test, type-check, build, or lint command.
+6. **Inspect the diff** — verify only intended files/lines changed before claiming success.
 
-**Best practice:** Always `read` before `edit` to see the exact text. After every `edit`, `write`, or `upload` of code/config, run `diagnose <path>` to catch LSP issues. `write` replaces the whole file — use `edit` for partial changes.
+Do not say a change works without reporting the check that passed. Fix root causes; do not hide diagnostics or weaken tests.
 
-### Shell
+## LSP: primary code-intelligence tool
 
-| Tool | Parameters | Behaviour |
-|------|-----------|-----------|
-| `bash` | `{ command, description? }` | Runs any shell command. Returns `{ stdout, stderr, exitCode }`. |
+Use LSP for semantic questions; use text tools for text questions.
 
-**Best practice:**
-- chain commands with `&&`
-- each call is a **fresh shell** — exported vars don't persist
+| Need | LSP method |
+|---|---|
+| Understand a symbol/type/doc | `textDocument/hover` |
+| Follow declaration | `textDocument/definition` |
+| Find declared type | `textDocument/typeDefinition` |
+| Find concrete implementation | `textDocument/implementation` |
+| Assess usages/impact | `textDocument/references` |
+| Inspect call signature | `textDocument/signatureHelp` |
+| Ask for valid completions | `textDocument/completion` |
+| Outline one file | `textDocument/documentSymbol` |
+| Find a symbol across a project | `workspace/symbol` with `query` |
+| Validate rename target | `textDocument/prepareRename` |
+| Preview semantic rename edits | `textDocument/rename` with `new_name` |
+| Discover quick fixes/refactors | `textDocument/codeAction` with a range |
+| Request language formatting edits | `textDocument/formatting` |
 
-### Background Processes
+Positions are **0-indexed** and must land on the identifier token.
 
-| Tool | Parameters | Behaviour |
-|------|-----------|-----------|
-| `spawn` | `{ command }` | Start a long-running command. Returns session ID. |
-| `logs` | `{ session_id }` | Get stdout/stderr from a session. |
-| `status` | `{ session_id }` | Check if a session is still running. |
-| `kill` | `{ session_id }` | Stop a running session. |
-| `sessions` | `{}` | List all background sessions. |
+### Routing rules
 
-**Best practice:** Use `spawn` for dev servers (`pnpm dev`), watchers (`cargo watch`), and other long-running processes.
+- Given file + line/column: call `lsp` directly; do not read/grep first.
+- Given only a symbol name: prefer `workspace/symbol`. If unsupported/empty, `grep` only to locate its line, then use LSP.
+- For definitions, implementations, types, references, signatures, and renames: LSP first.
+- For literals, comments, log messages, config keys, generated text, or unsupported files: `grep` is correct.
+- Use `read` for surrounding implementation context and exact edit text, not as a substitute for symbol intelligence.
+- If LSP fails or returns empty: verify support with `lsp_servers`, retry once after warmup, then fall back to `grep`/`read` and state the fallback.
+- First request on a large project may be slow; warm sessions are reused and should remain running.
 
-### Search
+### Safe semantic refactoring
 
-| Tool | Parameters | Behaviour |
-|------|-----------|-----------|
-| `grep` | `{ pattern, path? }` | Recursive case-sensitive content search, returns matches with line numbers. |
-| `find` | `{ path, name? }` | Filename search by glob (e.g. `*.go`, `*.ts`). |
+For rename/move/signature changes:
 
-**Best practice:** `grep` for content, `find` for filenames. Omit `path` in grep to search whole cwd.
+1. Locate the exact symbol (`workspace/symbol`, `documentSymbol`, or minimal `grep`).
+2. Inspect `definition`/`typeDefinition`/`implementation` as relevant.
+3. Call `references` to understand impact.
+4. Use `prepareRename`, then `rename` to preview authoritative workspace edits.
+5. Read affected files and apply the smallest edits with `edit`.
+6. Diagnose every changed file and run focused tests/type-checks.
+7. Inspect `git diff`.
 
-### LSP
+LSP rename, code-action, and formatting responses are previews; file mutation remains explicit through `edit`/`write`. Never perform a blind global text rename when symbols may be shadowed or share names.
 
-#### Code-intelligence routing rule
+### Diagnostics
 
-For questions like “what is this symbol/type/function?”, “where is this defined?”, “who references this?”, “what completions are available?”, or “what does hover say?” on a supported code file, use LSP.
+- Run `diagnose` before changing broken code to establish the baseline.
+- Run it after every code/config `edit`, `write`, or `upload` supported by an available server.
+- Diagnostics are fast feedback, not a replacement for project tests/builds.
+- Do not assume `(none)` proves runtime correctness.
 
-- If the user gives a file + line/column: call `lsp` directly. Do not `read`/`grep` first.
-- If the user gives a file + symbol but no line: use `grep` only to locate the symbol line, then call `lsp textDocument/hover` on that symbol. Do not answer from `grep` alone.
-- For definitions and references: use `lsp textDocument/definition` / `textDocument/references`, not `grep`, unless LSP fails or the file type is unsupported.
-- Use `read` only when you need surrounding source after LSP, or before editing.
+## Tool selection
 
-| Tool | Parameters | Behaviour |
-|------|-----------|-----------|
-| `lsp_servers` | `{}` | Lists available LSP servers and supported extensions. Use this for “which LSPs are available?” |
-| `lsp_sessions` | `{}` | Lists running LSP server sessions. Use this for “which LSP servers are running?” |
-| `lsp` | `{ method, path, line, column }` | Methods: `textDocument/hover`, `textDocument/definition`, `textDocument/references`, `textDocument/completion`. Line/col are **0-indexed**. |
-| `diagnose` | `{ path }` | Returns errors/warnings/hints. `[]` = clean. |
+### Files and search
 
-**Best practice:** For code-intelligence questions about a symbol/type/function/definition/references/completions/hover, use `lsp` first; only `read`/`grep` if LSP is unsupported, empty, or you need surrounding source. Always `diagnose` first when helping with compilation errors, and again after every file change that LSP can check. First LSP request can be slow (gopls indexing takes 30s+). If LSP returns empty, check if file extension is supported (Go, Rust, TS, Python, C/C++, Lua, Bash, YAML, JSON).
+| Tool | Use |
+|---|---|
+| `read` | Exact source/context before editing |
+| `edit` | Small exact-text replacement; preferred mutation tool |
+| `write` | New file or intentional whole-file replacement |
+| `upload` | Local binary/image to remote workspace |
+| `ls` / `find` | Discover paths/files |
+| `grep` | Literal/text search, or locating a symbol position when symbol search fails |
 
-### Package Management
+`edit` exact text is case/whitespace-sensitive. `write` overwrites the entire file.
 
-**CRITICAL: Use these tools for ALL package management. NEVER run raw package-manager commands via `bash`.**
+### LSP inventory
 
-| Tool | Parameters | Behaviour |
-|------|-----------|-----------|
-| `pkg_install` | `{ package }` | Install a package in foreground. UI shows an installing message while it runs. |
-| `pkg_remove` | `{ package }` | Uninstall a package in foreground. UI shows a removing message while it runs. |
-| `pkg_search` | `{ query }` | Search available packages |
-| `pkg_list` | `{}` | List installed packages |
+- `lsp_servers {}`: available servers, extensions, and root modes.
+- `lsp_sessions {}`: currently warm `(server, root)` sessions.
+- `diagnose { path }`: file diagnostics.
+- `lsp { method, path, ... }`: all semantic requests; do not invent separate LSP tools.
 
-**If a package management tool is not in this table, it does not exist. Do not use bash-based package workarounds. Wait for `pkg_install`/`pkg_remove` to finish before using the package.**
+### Shell and long-running work
 
-## Common Workflows
+- `bash`: finite commands; each invocation is a fresh shell, so chain dependent commands with `&&`.
+- `spawn`: dev servers, watchers, or any persistent process.
+- `logs`, `status`, `kill`, `sessions`: manage spawned processes.
+- Never block `bash` on a watcher/server that does not exit.
 
-### Coding / refactoring rule
+### Packages
 
-When changing code, use LSP as part of the workflow, not just text search:
+Use `pkg_search`, `pkg_install`, `pkg_list`, and `pkg_remove` for **workspace system/developer tools** such as compilers, language servers, and CLIs. Do not use raw OS/Nix package commands.
 
-1. `diagnose <file>` before editing when the file type is LSP-supported.
-2. For renames/refactors, use `lsp textDocument/references` or `definition` to understand affected symbols. `grep` may help find the first line/column, but do not rely on grep alone.
-3. `read` the file before `edit` so exact text matches.
-4. Use `edit` for small changes, `write` only for whole-file rewrites.
-5. `diagnose <file>` after every code/config `edit`, `write`, or `upload`.
+Project dependencies still use the repository's existing lockfile/package manager through `bash` (`npm`, `pnpm`, `bun`, `cargo`, `go mod`, etc.). Do not introduce a new package manager or dependency without need.
 
-### Fix compilation errors
+## Efficient exploration
+
+Keep context small and semantic:
+
+1. `ls`/`find` to identify the relevant project area.
+2. `documentSymbol` for file structure or `workspace/symbol` for named concepts.
+3. `hover` + `definition`/`implementation` for contracts and behavior.
+4. `references` before changing public/shared code.
+5. `read` only relevant implementations and nearby tests.
+
+Avoid dumping entire repositories, generated files, lockfiles, dependency trees, or huge reference lists into context.
+
+## Verification ladder
+
+Stop at the first set of checks that convincingly covers the change:
+
+1. `diagnose` changed files.
+2. Focused formatter/linter/type-check for changed scope.
+3. Nearest unit test or package test.
+4. Wider build/test only when impact crosses package boundaries or the user requests it.
+5. `git diff --check` and `git diff -- <files>` before completion.
+
+Security, data-loss, migration, concurrency, and public API changes require stronger checks; do not simplify those away.
+
+## Common workflows
+
+### Fix a diagnostic
+
+```text
+diagnose src/file.ts
+lsp hover/definition at failing symbol
+read src/file.ts
+edit src/file.ts
+ diagnose src/file.ts
+bash focused-test-or-typecheck
+bash git diff --check && git diff -- src/file.ts
 ```
-diagnose src/main.go           # show errors
-read src/main.go               # read exact content
-edit src/main.go "bug" "fix"   # fix the error
-bash "go build ./..."           # verify
-diagnose src/main.go           # confirm clean
+
+### Understand unfamiliar code
+
+```text
+workspace/symbol query=Concept
+definition + typeDefinition/implementation
+references
+read only relevant definitions and tests
 ```
 
-### Explore unfamiliar codebase
-```
-ls /workspace
-read path/to/module/main.go
+### Add or change behavior
+
+```text
+documentSymbol target file
+hover/signatureHelp around API
+references if shared
+read implementation + nearest tests
+edit
+ diagnose changed files
+run focused tests
+inspect diff
 ```
 
-### Answer “what is this symbol?”
-```
-# With line/column from the user: go straight to LSP
-lsp textDocument/hover path/to/main.go 42 10
+### Commit
 
-# With only a symbol name: grep only to find the line, then LSP hover
-grep "type InterestingType" path/to/main.go
-lsp textDocument/hover path/to/main.go 42 10
-```
-
-### Set up new Go project dependencies
-```
-# Check Go needs CGo
-pkg_search gcc
-pkg_install gcc
-pkg_install golangci-lint
-pkg_install protobuf
-```
-
-### Set up web frontend (bun/pnpm)
-```
-# web dir already has node_modules? run build
-bash "cd /workspace/web && bun install"
-```
-
-### Commit and push
-```
-git status
-git diff
-git add -A && git commit -m "fix: description"
-git push
-```
-
-### Check project health
-```
-diagnose src/main.go
-bash "go vet ./..."
-bash "go test ./..."
-bash "go build ./..."
-```
+Before committing: diagnostics clean for changed supported files, focused verification passes, and diff contains no accidental/generated/secret files. Then use the repository's existing commit conventions.
 
 ## Troubleshooting
 
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| Tool returns `fetch failed` | ws server unreachable | Check server URL, SSH into host, restart container (`docker restart kloudlite-ws`) |
-| `bash` returns empty stdout | Command produced no output | Check exitCode in details, add `echo done` to command |
-| `diagnose` returns `[]` but code has errors | LSP not started yet | Wait 10s and retry, or read the file to trigger watcher |
-| `pkg_install` succeeds but binary not found | Profile not refreshed | Run `pkg_install` again, then retry the command |
-| `go build ./...` fails with `gcc not found` | CGo dependency | `pkg_install gcc` — the Go project uses CGo packages |
-| `lsp` returns empty | File extension not supported | Check if extension has a server (Go/TS/Python/Rust/C/C++/Lua/Bash/YAML/JSON) |
-| `git push` fails auth | No SSH key / token | Use `git remote set-url origin https://token@github.com/...` |
+| Symptom | Action |
+|---|---|
+| `fetch failed` | Server unreachable; check URL/container |
+| LSP unsupported | Check `lsp_servers`, then use text tools |
+| LSP empty on known symbol | Confirm token position, retry after warmup, then fallback |
+| LSP slow first time | Wait for indexing; subsequent requests should be warm |
+| Diagnostics clean but build fails | Trust the build; diagnostics are not full verification |
+| Package tool succeeds but binary absent | Retry package operation/check profile, then verify PATH |
+| Background command has no output | Check `status` then `logs` |

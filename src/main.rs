@@ -78,8 +78,20 @@ enum Command {
     Lsp {
         method: String,
         path: String,
-        line: u32,
-        column: u32,
+        line: Option<u32>,
+        column: Option<u32>,
+        #[arg(long)]
+        end_line: Option<u32>,
+        #[arg(long)]
+        end_column: Option<u32>,
+        #[arg(long)]
+        query: Option<String>,
+        #[arg(long)]
+        new_name: Option<String>,
+        #[arg(long)]
+        tab_size: Option<u32>,
+        #[arg(long)]
+        insert_spaces: Option<bool>,
     },
     LspSessions,
     Pkg {
@@ -246,14 +258,34 @@ fn ssh_call(host: &str, cmd: &Command) {
             path,
             line,
             column,
+            end_line,
+            end_column,
+            query,
+            new_name,
+            tab_size,
+            insert_spaces,
         } => {
-            vec![
-                "lsp".into(),
-                method.clone(),
-                path.clone(),
-                line.to_string(),
-                column.to_string(),
-            ]
+            let mut v = vec!["lsp".into(), method.clone(), path.clone()];
+            if let Some(n) = line {
+                v.push(n.to_string());
+            }
+            if let Some(n) = column {
+                v.push(n.to_string());
+            }
+            for (flag, value) in [
+                ("--end-line", end_line.map(|v| v.to_string())),
+                ("--end-column", end_column.map(|v| v.to_string())),
+                ("--query", query.clone()),
+                ("--new-name", new_name.clone()),
+                ("--tab-size", tab_size.map(|v| v.to_string())),
+                ("--insert-spaces", insert_spaces.map(|v| v.to_string())),
+            ] {
+                if let Some(value) = value {
+                    v.push(flag.into());
+                    v.push(value);
+                }
+            }
+            v
         }
         Command::Find { path, name } => {
             let mut v = vec!["find".into(), path.clone()];
@@ -335,9 +367,26 @@ fn command_route(cmd: &Command) -> (&'static str, serde_json::Value) {
             path,
             line,
             column,
+            end_line,
+            end_column,
+            query,
+            new_name,
+            tab_size,
+            insert_spaces,
         } => (
             "lsp/request",
-            json!({ "method": method, "path": path, "line": line, "column": column }),
+            json!({
+                "method": method,
+                "path": path,
+                "line": line,
+                "column": column,
+                "end_line": end_line,
+                "end_column": end_column,
+                "query": query,
+                "new_name": new_name,
+                "tab_size": tab_size,
+                "insert_spaces": insert_spaces,
+            }),
         ),
         Command::Sessions => ("sessions", json!({})),
         Command::LspSessions => ("lsp-sessions", json!({})),

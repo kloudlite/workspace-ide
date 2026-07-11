@@ -203,14 +203,18 @@ fn tool_definitions() -> Vec<Value> {
         tool_str("diagnose", "Run LSP diagnostics on a file", "path"),
         tool(
             "lsp_request",
-            "Make an LSP request (hover, definition, references, completion)",
+            "Query code intelligence through LSP: navigation, symbols, rename/code-action previews, completion, signatures, or formatting edits",
             json!({
-                "method": { "type": "string", "description": "LSP method: textDocument/hover, textDocument/definition, textDocument/references, textDocument/completion" },
-                "path": { "type": "string", "description": "File path" },
-                "line": { "type": "number", "description": "Line number (0-indexed)" },
-                "column": { "type": "number", "description": "Column (0-indexed)" },
+                "method": { "type": "string", "description": "LSP method" },
+                "path": { "type": "string", "description": "File path used to select the language server" },
+                "line": { "type": "number", "description": "Start line (0-indexed)" },
+                "column": { "type": "number", "description": "Start column (0-indexed)" },
+                "end_line": { "type": "number", "description": "Optional end line for code actions" },
+                "end_column": { "type": "number", "description": "Optional end column for code actions" },
+                "query": { "type": "string", "description": "Workspace symbol query" },
+                "new_name": { "type": "string", "description": "New symbol name for rename preview" },
             }),
-            &["method", "path", "line", "column"],
+            &["method", "path"],
         ),
         tool_noprops("lsp_sessions", "List running LSP server sessions"),
     ]
@@ -307,9 +311,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<Value, String> {
         "lsp_request" => {
             let method = get_str(args, "method")?;
             let path = get_str(args, "path")?;
-            let line = args.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-            let col = args.get("column").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-            let params = crate::lsp::lsp_params(path, line, col, method);
+            let params = crate::lsp::lsp_params(path, method, args)?;
             crate::lsp::lsp_request(path, method, params)
                 .await
                 .map(|v| json!(v))

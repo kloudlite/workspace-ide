@@ -240,22 +240,35 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "lsp",
       label: "LSP",
-      description: "Preferred tool for code intelligence: symbol/type/function meaning, hover docs, definition, references, and completion. Use this before read/grep for supported code files.",
+      description: "Primary code-intelligence tool. Navigate symbols, inspect types/signatures, find usages, discover symbols, preview semantic renames/code actions, request completions, or obtain formatting edits. Prefer this over text search for supported code.",
       parameters: Type.Object({
-        method: Type.Union(
-          [Type.Literal("textDocument/hover"), Type.Literal("textDocument/definition"),
-           Type.Literal("textDocument/references"), Type.Literal("textDocument/completion")],
-          { description: "LSP method" }
-        ),
-        path: Type.String({ description: "File path (relative or absolute)" }),
-        line: Type.Number({ description: "Line number (0-indexed)" }),
-        column: Type.Number({ description: "Column number (0-indexed)" }),
+        method: Type.Union([
+          Type.Literal("textDocument/hover"),
+          Type.Literal("textDocument/definition"),
+          Type.Literal("textDocument/typeDefinition"),
+          Type.Literal("textDocument/implementation"),
+          Type.Literal("textDocument/references"),
+          Type.Literal("textDocument/completion"),
+          Type.Literal("textDocument/signatureHelp"),
+          Type.Literal("textDocument/documentSymbol"),
+          Type.Literal("workspace/symbol"),
+          Type.Literal("textDocument/prepareRename"),
+          Type.Literal("textDocument/rename"),
+          Type.Literal("textDocument/codeAction"),
+          Type.Literal("textDocument/formatting"),
+        ], { description: "LSP method" }),
+        path: Type.String({ description: "File path used to select the language server" }),
+        line: Type.Optional(Type.Number({ description: "Start line (0-indexed); required for position methods" })),
+        column: Type.Optional(Type.Number({ description: "Start column (0-indexed); required for position methods" })),
+        end_line: Type.Optional(Type.Number({ description: "End line for codeAction range" })),
+        end_column: Type.Optional(Type.Number({ description: "End column for codeAction range" })),
+        query: Type.Optional(Type.String({ description: "Query for workspace/symbol" })),
+        new_name: Type.Optional(Type.String({ description: "New name for rename preview" })),
+        tab_size: Type.Optional(Type.Number({ description: "Formatting tab size (default 4)" })),
+        insert_spaces: Type.Optional(Type.Boolean({ description: "Formatting uses spaces (default true)" })),
       }),
-      execute: async (_id, params: { method: string; path: string; line: number; column: number }, signal) => {
-        const r: any = await postJson(`${base}/lsp/request`, {
-          method: params.method, path: params.path,
-          line: params.line, column: params.column,
-        }, signal);
+      execute: async (_id, params: Record<string, any>, signal) => {
+        const r: any = await postJson(`${base}/lsp/request`, params, signal);
         const text = JSON.stringify(r.result ?? r);
         return { content: [{ type: "text", text }], details: {} };
       },
@@ -268,7 +281,7 @@ export function createWsTools(config: WsConfig) {
       execute: async (_id, params: { path: string }, signal) => {
         const r: any = await postJson(`${base}/lsp/diagnose`, { path: params.path }, signal);
         const text = (r || []).map((d: any) =>
-          `${d.range.start.line}:${d.range.start.character}: ${d.message}`).join("\n") || "(none)";
+          `${d.path}:${d.line + 1}:${d.column + 1}: severity ${d.severity}: ${d.message}${d.code ? ` [${d.code}]` : ""}`).join("\n") || "(none)";
         return { content: [{ type: "text", text }], details: {} };
       },
     }),

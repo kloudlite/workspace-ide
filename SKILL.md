@@ -1,186 +1,129 @@
-# ws CLI Tool
+---
+name: ws-cli
+description: Use the ws CLI for remote headless-IDE development: semantic LSP navigation/refactoring, diagnostics, file edits, shell verification, background sessions, and workspace package tools.
+---
 
-`ws` is a CLI tool that communicates with a headless IDE server over HTTP. It provides file operations, shell execution, background process management, LSP diagnostics, and package management with version pinning.
+# ws CLI
 
-## Connecting
+`ws` talks to a remote headless IDE over HTTP. Resolve the server in this order: `--server <url>`, `REMOTE_WS`, then `http://localhost:8321`. Use `--ssh user@host` to tunnel.
 
-The server address is resolved in order:
-1. `--server <url>` flag
-2. `REMOTE_WS` environment variable
-3. `http://localhost:8321` (default)
+## Development loop
 
-```bash
-ws --server http://host:8321 read file.go
-REMOTE_WS=http://host:8321 ws read file.go
-```
+1. Explore symbols through LSP.
+2. Read only relevant implementations/tests.
+3. Diagnose before editing broken code.
+4. Make the smallest exact edit.
+5. Diagnose changed supported files.
+6. Run focused tests/type-check/build.
+7. Inspect `git diff` before completion.
 
-## Commands
+Show verification evidence; do not claim success because code merely looks correct.
 
-### File Operations
-
-```bash
-ws read <path>                    # Read file contents
-ws write <path> <content>         # Write/create a text file
-ws upload <local> <remote>        # Upload a local file to the remote workspace
-ws edit <path> <old> <new>        # Replace text in a file
-ws ls <path>                      # List directory entries
-ws grep <pattern> [path]          # Search for pattern in files
-ws find <path> [--name <glob>]    # Find files matching a glob
-```
-
-### Shell
-
-**IMPORTANT: `bash` blocks until the command exits.** Use it only for short-lived commands that complete within seconds (compiles, tests, file ops). For anything that runs indefinitely — dev servers, watchers, daemons — use `spawn` instead.
+## Files
 
 ```bash
-ws bash "<command>"               # Short-lived shell command (blocks until done)
-ws bash "git status"              # Run git through bash
-ws bash "git diff"                # Show git diff through bash
+ws read <path>
+ws edit <path> <old> <new>
+ws write <path> <content>
+ws upload <local> <remote>
+ws ls <path>
+ws find <path> --name '<glob>'
+ws grep <pattern> [path]
 ```
 
-### Background Sessions
+Use `read` before exact-text `edit`. Prefer `edit` for small changes; `write` replaces the whole file. After code/config mutation, run `diagnose` when supported.
 
-Use `spawn` for any command that won't exit on its own — dev servers, file watchers, build daemons. The command runs in the background; check output later with `logs`.
+## LSP
+
+Servers start by file type and remain warm for the server lifetime.
 
 ```bash
-ws spawn "<command>"              # Start a long-running process
-ws logs <session_id>              # Read stdout/stderr from a session
-ws status <session_id>            # Check if session is running
-ws kill <session_id>              # Kill a session
-ws sessions                       # List all sessions
+ws diagnose <path>
+ws lsp textDocument/hover <path> <line> <column>
+ws lsp textDocument/definition <path> <line> <column>
+ws lsp textDocument/typeDefinition <path> <line> <column>
+ws lsp textDocument/implementation <path> <line> <column>
+ws lsp textDocument/references <path> <line> <column>
+ws lsp textDocument/completion <path> <line> <column>
+ws lsp textDocument/signatureHelp <path> <line> <column>
+ws lsp textDocument/documentSymbol <path>
+ws lsp workspace/symbol <path> --query SymbolName
+ws lsp textDocument/prepareRename <path> <line> <column>
+ws lsp textDocument/rename <path> <line> <column> --new-name NewName
+ws lsp textDocument/codeAction <path> <line> <column> --end-line N --end-column N
+ws lsp textDocument/formatting <path> --tab-size 4 --insert-spaces true
+ws lsp-sessions
 ```
 
-### LSP (Language Server Protocol)
+Positions are 0-indexed and must land on the identifier.
 
-LSP servers auto-start based on file extension. Supported languages: rust, go, typescript, python, c/c++, lua, bash, yaml, json.
+### Semantic routing
+
+- Symbol/type/docs → hover.
+- Declaration/type/concrete implementation → definition/typeDefinition/implementation.
+- Impact analysis → references.
+- File/project discovery → documentSymbol/workspace symbol.
+- Rename → prepareRename, references, then rename preview.
+- Quick fixes/refactors → codeAction preview.
+- Literal/config/comment search → grep.
+- Read source for implementation context and exact edit text, not as a substitute for code intelligence.
+
+Rename, code-action, and formatting results are previews. Apply reviewed changes explicitly with `edit`/`write`, then diagnose and test. Never blind-global-replace a symbol when semantic rename is available.
+
+If LSP is empty: verify the token position/server support, retry once after warmup, then use grep/read and state the fallback.
+
+## Shell and background work
+
+`bash` blocks until completion and each call is a fresh shell:
 
 ```bash
-ws diagnose <path>                                      # Get diagnostics for a file
-ws lsp textDocument/hover <path> <line> <col>           # Hover information
-ws lsp textDocument/definition <path> <line> <col>      # Go to definition
-ws lsp textDocument/references <path> <line> <col>      # Find references
-ws lsp textDocument/completion <path> <line> <col>      # Code completion
-ws lsp-sessions                                         # List active LSP sessions
+ws bash 'cargo test -p package'
+ws bash 'git diff --check && git diff -- src/file.rs'
 ```
 
-### Packages
-
-Packages are managed with version pinning. Each workspace has `ws.yaml` (manifest) and `ws.lock` (lockfile) — commit both to your repo for reproducibility.
+Use background sessions for servers/watchers:
 
 ```bash
-ws pkg install <pkg>[@version]    # Install (blocks until done)
-ws pkg search <query>             # Search available packages
-ws pkg list                       # List installed packages
-ws pkg remove <pkg>               # Remove a package (blocks until done)
-ws pkg apply                      # Install packages from ws.yaml
-ws pkg sync                       # Sync ws.yaml + ws.lock from current state
+ws spawn 'pnpm dev'
+ws status <session_id>
+ws logs <session_id>
+ws kill <session_id>
+ws sessions
 ```
 
-### MCP
+Never run a persistent process through blocking `bash`.
 
-For AI agents (Claude Desktop, OpenCode, Codex):
+## Packages
+
+Use workspace package commands for compilers, language servers, and developer CLIs; never raw OS/Nix package commands:
 
 ```bash
-ws mcp                            # Exposes all tools via stdio JSON-RPC
+ws pkg search <query>
+ws pkg install <pkg>[@version]
+ws pkg list
+ws pkg remove <pkg>
+ws pkg apply
+ws pkg sync
 ```
 
-## Best Practices
+Use the repository's existing package manager for project dependencies (`pnpm`, `npm`, `bun`, `cargo`, `go mod`, etc.). Do not introduce a new dependency or package manager without need. Commit `ws.yaml` and `ws.lock` when package state changes.
 
-### Read Before Edit
+## Verification ladder
+
+Use the narrowest checks that prove the change:
+
+1. LSP diagnostics on changed files.
+2. Focused formatter/linter/type-check.
+3. Nearest unit/package test.
+4. Wider build/test for cross-package impact.
+5. `git diff --check` and scoped `git diff`.
+
+Diagnostics are fast feedback, not a substitute for tests/builds. Security, migration, concurrency, public API, and data-loss-sensitive changes require stronger verification.
+
+## MCP
 
 ```bash
-ws read src/main.rs               # Review current content first
-ws edit src/main.rs "old" "new"   # Then make the edit
+ws mcp
 ```
 
-Chain multiple edits as separate `ws edit` calls — each is atomic. After every code/config `edit`, `write`, or `upload`, run `ws diagnose <path>` when the file type has LSP support.
-
-### LSP Diagnostics First
-
-```bash
-ws diagnose src/main.rs       # Understand what's wrong
-# ... fix issues ...
-ws diagnose src/main.rs       # Verify fixes
-```
-
-### Hover for Understanding
-
-```bash
-ws lsp-hover src/main.rs 42 10    # Get type signature and docs at line 42, col 10
-ws lsp-definition src/main.rs 42 10   # Go to definition
-ws lsp-references src/main.rs 42 10   # Find usages
-```
-
-### Background Builds
-
-```bash
-ws spawn "cargo watch -x build"   # Long-running build watcher
-ws logs <session_id>              # Check output later
-```
-
-### Install Before Use
-
-```bash
-ws pkg install go                 # Install Go compiler
-ws bash "go version"              # Verify
-ws diagnose main.go           # LSP uses the installed tool
-```
-
-### Version Pinning for Reproducibility
-
-```bash
-ws pkg install go@1.26            # Pin exact version
-ws pkg install nodejs@22          # Pin Node.js 22
-# → ws.yaml + ws.lock auto-updated
-# → Commit both files for reproducible workspaces
-```
-
-### Edit-Compile-Diagnose Loop
-
-```bash
-ws edit src/main.rs "func old" "func new"
-ws bash "cargo build"
-ws diagnose src/main.rs
-```
-
-## Workflows
-
-### Fix a Compilation Error
-
-```bash
-ws read src/main.rs
-ws diagnose src/main.rs
-ws edit src/main.rs "wrong_code" "fixed_code"
-ws bash "cargo build"
-ws diagnose src/main.rs
-```
-
-### Explore an Unknown Codebase
-
-```bash
-ws ls .
-ws grep "interesting_function" src/
-ws read src/interesting.rs
-ws lsp-hover src/interesting.rs 15 20
-ws lsp-references src/interesting.rs 15 20
-ws lsp-definition src/interesting.rs 15 20
-```
-
-### Set Up a New Project
-
-```bash
-ws pkg install go@1.26 nodejs@22
-ws bash "go mod init myproject"
-ws write main.go "package main\nfunc main() {\n  println(\"hello\")\n}\n"
-ws diagnose main.go
-ws bash "go build"
-ws pkg sync                        # Generate ws.yaml + ws.lock
-```
-
-### Reproduce a Workspace from ws.yaml
-
-```bash
-ws pkg apply                       # Installs all packages from ws.yaml
-# Uses pinned versions from ws.lock
-# Same versions, every time
-```
+MCP exposes the same file, shell, background, diagnostics, and generic LSP request capabilities over stdio JSON-RPC.

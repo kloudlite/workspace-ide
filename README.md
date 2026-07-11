@@ -55,7 +55,7 @@ All tool calls are HTTP requests to the ws server. No local filesystem access.
 | `sessions` | `/sessions` | List all background sessions |
 | `lsp_servers` | `/lsp/servers` | List available LSP servers/extensions |
 | `lsp_sessions` | `/lsp/sessions` | List running LSP sessions |
-| `lsp` | `/lsp/request` | LSP hover/definition/references/completion |
+| `lsp` | `/lsp/request` | Semantic navigation, symbols, completions, signatures, rename/code-action previews, formatting edits |
 | `diagnose` | `/lsp/diagnose` | LSP diagnostics for a file |
 | `pkg_install` | `/pkg/install` | Install a package in foreground |
 | `pkg_search` | `/pkg/search` | Search packages |
@@ -92,7 +92,7 @@ ws --ssh user@host read file.go   # tunnel via SSH
 | Files | `read`, `write`, `upload`, `edit`, `ls`, `grep`, `find` |
 | Shell | `bash` |
 | Background | `spawn`, `logs`, `status`, `kill`, `sessions` |
-| LSP | `diagnose`, `lsp <method> <path> <line> <col>`, `lsp-sessions` |
+| LSP | `diagnose`, generic `lsp <method> <path> [line] [col] [options]`, `lsp-sessions` |
 | Packages | `pkg install`, `search`, `list`, `remove`, `apply`, `sync` |
 | Git | `bash "git status"`, `bash "git diff"` |
 | MCP | `ws mcp` (JSON-RPC over stdio) |

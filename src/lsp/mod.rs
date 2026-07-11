@@ -482,16 +482,68 @@ fn find_root(file_path: &str, root_mode: server::RootMode) -> String {
     }
 }
 
-/// Build LSP request params for a position. Shared by server.rs and mcp.rs.
-pub fn lsp_params(path: &str, line: u32, col: u32, method: &str) -> serde_json::Value {
-    let mut p = serde_json::json!({
-        "textDocument": { "uri": format!("file://{}", path) },
-        "position": { "line": line, "character": col },
-    });
-    if method.ends_with("/references") {
-        p["context"] = serde_json::json!({ "includeDeclaration": true });
-    }
-    p
+/// Build method-specific LSP params from an HTTP/MCP request.
+pub fn lsp_params(
+    path: &str,
+    method: &str,
+    req: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let uri = format!("file://{}", path);
+    let position = || -> Result<serde_json::Value, String> {
+        Ok(serde_json::json!({
+            "line": req.get("line").and_then(|v| v.as_u64()).ok_or("missing field: line")?,
+            "character": req.get("column").and_then(|v| v.as_u64()).ok_or("missing field: column")?,
+        }))
+    };
+    let text_document = || serde_json::json!({ "uri": uri.clone() });
+
+    Ok(match method {
+        "textDocument/documentSymbol" => serde_json::json!({ "textDocument": text_document() }),
+        "workspace/symbol" => serde_json::json!({
+            "query": req.get("query").and_then(|v| v.as_str()).ok_or("missing field: query")?
+        }),
+        "textDocument/rename" => serde_json::json!({
+            "textDocument": text_document(),
+            "position": position()?,
+            "newName": req.get("new_name").and_then(|v| v.as_str()).ok_or("missing field: new_name")?,
+        }),
+        "textDocument/codeAction" => serde_json::json!({
+            "textDocument": text_document(),
+            "range": {
+                "start": position()?,
+                "end": {
+                    "line": req.get("end_line").and_then(|v| v.as_u64()).or_else(|| req.get("line").and_then(|v| v.as_u64())).ok_or("missing field: line")?,
+                    "character": req.get("end_column").and_then(|v| v.as_u64()).or_else(|| req.get("column").and_then(|v| v.as_u64())).ok_or("missing field: column")?,
+                }
+            },
+            "context": { "diagnostics": [] },
+        }),
+        "textDocument/formatting" => serde_json::json!({
+            "textDocument": text_document(),
+            "options": {
+                "tabSize": req.get("tab_size").and_then(|v| v.as_u64()).unwrap_or(4),
+                "insertSpaces": req.get("insert_spaces").and_then(|v| v.as_bool()).unwrap_or(true),
+            }
+        }),
+        "textDocument/hover"
+        | "textDocument/definition"
+        | "textDocument/typeDefinition"
+        | "textDocument/implementation"
+        | "textDocument/references"
+        | "textDocument/completion"
+        | "textDocument/signatureHelp"
+        | "textDocument/prepareRename" => {
+            let mut p = serde_json::json!({
+                "textDocument": text_document(),
+                "position": position()?,
+            });
+            if method == "textDocument/references" {
+                p["context"] = serde_json::json!({ "includeDeclaration": true });
+            }
+            p
+        }
+        _ => return Err(format!("unsupported LSP method: {}", method)),
+    })
 }
 
 pub fn list_sessions() -> Vec<(String, String)> {
@@ -596,4 +648,24 @@ pub fn reconcile_lsp() -> (usize, usize) {
         }
     }
     (installed_count, uninstalled)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lsp_params;
+
+    #[test]
+    fn builds_method_specific_params_and_rejects_bad_requests() {
+        let rename = serde_json::json!({ "line": 2, "column": 4, "new_name": "renamed" });
+        let params = lsp_params("/workspace/main.go", "textDocument/rename", &rename).unwrap();
+        assert_eq!(params["position"]["line"], 2);
+        assert_eq!(params["newName"], "renamed");
+
+        let symbols = serde_json::json!({ "query": "Widget" });
+        let params = lsp_params("/workspace/main.go", "workspace/symbol", &symbols).unwrap();
+        assert_eq!(params["query"], "Widget");
+
+        assert!(lsp_params("/workspace/main.go", "textDocument/hover", &symbols).is_err());
+        assert!(lsp_params("/workspace/main.go", "unknown", &serde_json::json!({})).is_err());
+    }
 }

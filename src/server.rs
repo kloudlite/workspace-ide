@@ -256,9 +256,8 @@ async fn lsp_request_handler(
 ) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     let method = get_str(&req, "method")?;
     let path = get_str(&req, "path")?;
-    let line = req.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-    let col = req.get("column").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-    let params = lsp::lsp_params(path, line, col, method);
+    let params =
+        lsp::lsp_params(path, method, &req).map_err(|e| err(StatusCode::BAD_REQUEST, e))?;
     lsp::lsp_request(path, method, params)
         .await
         .map(Json)
