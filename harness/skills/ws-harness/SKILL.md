@@ -64,9 +64,10 @@ For rename/move/signature changes:
 2. Inspect `definition`/`typeDefinition`/`implementation` as relevant.
 3. Call `references` to understand impact.
 4. Use `prepareRename`, then `rename` to preview authoritative workspace edits.
-5. Read affected files and apply the smallest edits with `edit`.
-6. Diagnose every changed file and run focused tests/type-checks.
-7. Inspect `git diff`.
+5. Read only files named by the rename preview plus separately identified implementations; do not scan unrelated files.
+6. Apply the smallest edits with `edit`.
+7. Diagnose every changed file and run focused tests/type-checks.
+8. Inspect `git diff`.
 
 LSP rename, code-action, and formatting responses are previews; file mutation remains explicit through `edit`/`write`. Never perform a blind global text rename when symbols may be shadowed or share names.
 
@@ -102,6 +103,8 @@ LSP rename, code-action, and formatting responses are previews; file mutation re
 ### Shell and long-running work
 
 - `bash`: finite commands; each invocation is a fresh shell, so chain dependent commands with `&&`.
+- Never append `|| true` to tests, builds, diagnostics, or diff checks: it hides failure. Run optional searches separately.
+- Use the `grep` tool for searches instead of assuming `rg` or another CLI is installed.
 - `spawn`: dev servers, watchers, or any persistent process.
 - `logs`, `status`, `kill`, `sessions`: manage spawned processes.
 - Never block `bash` on a watcher/server that does not exit.
@@ -126,7 +129,7 @@ Avoid dumping entire repositories, generated files, lockfiles, dependency trees,
 
 ## Verification ladder
 
-Stop at the first set of checks that convincingly covers the change; do not repeat equivalent checks after they pass:
+Stop at the first set of checks that convincingly covers the change. Run one well-formed verification chain, preserve its exit status, and do not repeat equivalent checks after it passes:
 
 1. `diagnose` changed files.
 2. Focused formatter/linter/type-check for changed scope.

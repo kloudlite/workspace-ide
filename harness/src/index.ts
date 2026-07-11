@@ -53,7 +53,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "bash",
       label: "Bash",
-      description: "Run a shell command on the remote workspace",
+      description: "Run a finite shell command remotely. Preserve verification failures: never mask tests/builds/diff checks with || true. Use grep tool for searches and spawn for persistent commands.",
       parameters: Type.Object({
         command: Type.String({ description: "Command to run" }),
       }),
