@@ -130,7 +130,7 @@ Avoid dumping entire repositories, generated files, lockfiles, dependency trees,
 
 ## Verification ladder
 
-Stop at the first set of checks that convincingly covers the change. Run one well-formed verification chain, preserve its exit status, and do not repeat equivalent checks after it passes:
+Stop at the first set of checks that convincingly covers the change. Run one well-formed verification chain, preserve its exit status, and do not repeat equivalent checks, reread unchanged files, or continue editing after it passes:
 
 1. `diagnose` changed files.
 2. Focused formatter/linter/type-check for changed scope.
@@ -141,6 +141,15 @@ Stop at the first set of checks that convincingly covers the change. Run one wel
 Security, data-loss, migration, concurrency, and public API changes require stronger checks; do not simplify those away.
 
 ## Common workflows
+
+### Implement a feature request
+
+Before editing, derive the smallest observable acceptance behavior and choose the existing layer that owns the public API. Use symbols/references to confirm that boundary.
+
+- Add one API per required operation at the owning boundary; keep lower-layer helpers private/minimal where the language permits.
+- Do not add aliases, compatibility wrappers, alternate names, configuration, or extension points unless an existing caller/convention requires them.
+- Prefer one coherent implementation pass: source + focused tests, then diagnose and verify.
+- Once acceptance tests pass and the requested behavior is present, stop. Do not reopen the design to add speculative convenience APIs.
 
 ### Fix a diagnostic
 

@@ -269,10 +269,14 @@ pub async fn grep_files(pattern: &str, search_path: Option<&str>) -> Result<Grep
             let path = parts.next()?;
             let line_number: usize = parts.next()?.parse().ok()?;
             let text = parts.next().unwrap_or("");
+            let mut snippet: String = text.chars().take(500).collect();
+            if snippet.len() < text.len() {
+                snippet.push_str("… [line truncated]");
+            }
             Some(GrepMatch {
                 path: path.to_string(),
                 line_number,
-                text: text.to_string(),
+                text: snippet,
             })
         })
         .collect();
