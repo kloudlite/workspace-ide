@@ -51,8 +51,6 @@ for (let i = 0; i < args.length; i++) {
 
 if (!serverUrl) serverUrl = "http://localhost:8321";
 
-const wsTools = createWsTools({ serverUrl });
-
 // ponytail: hash server URL into a safe dir name — different connections get isolated sessions
 const sessionDir = join(homedir(), ".ws-sessions", createHash("sha256").update(serverUrl).digest("hex").slice(0, 12));
 
@@ -106,13 +104,14 @@ async function main() {
         additionalExtensionPaths: [distDir],
       },
     });
+    const localSkillDirs = services.resourceLoader.getSkills().skills.map((skill) => skill.baseDir);
     return {
       ...(await createAgentSessionFromServices({
         services,
         sessionManager,
         sessionStartEvent,
         noTools: "builtin",
-        customTools: wsTools,
+        customTools: createWsTools({ serverUrl, localSkillDirs }),
       })),
       services,
       diagnostics: services.diagnostics,

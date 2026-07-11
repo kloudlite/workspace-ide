@@ -7,7 +7,7 @@ description: Use for all development in ws-pi's remote workspace. Covers semanti
 
 ## Remote boundary
 
-All tools operate on the remote server and `/workspace`; relative paths resolve there. `upload` alone reads a local file. Never try to read local skill paths through remote `read`.
+All workspace tools operate on the remote server and `/workspace`; relative paths resolve there. `upload` reads a requested local source file. `read` has one read-only local exception for pi-discovered skill directories so skills can load normally; every other path is remote.
 
 ## Core development loop
 

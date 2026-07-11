@@ -2,11 +2,13 @@ import { Type } from "@sinclair/typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { readFile } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, resolve, sep } from "path";
 
 export interface WsConfig {
   /** HTTP server URL (e.g. "http://localhost:8321") */
   serverUrl: string;
+  /** Locally discovered skill directories; read-only exception to remote file access. */
+  localSkillDirs?: string[];
 }
 
 function localPath(path: string): string {
@@ -39,8 +41,13 @@ export function createWsTools(config: WsConfig) {
       description: "Read file text from the remote workspace. Do NOT use for symbol/type/function meaning, hover, definition, references, or completion when LSP supports the file; use lsp first for code intelligence.",
       parameters: Type.Object({ path: Type.String({ description: "File path" }) }),
       execute: async (_id, params: { path: string }, signal) => {
+        const path = resolve(params.path);
+        if (config.localSkillDirs?.some((dir) => path === resolve(dir) || path.startsWith(resolve(dir) + sep))) {
+          const content = await readFile(path, "utf8");
+          return { content: [{ type: "text", text: content }], details: { size: content.length, skill: true } };
+        }
         const r: any = await postJson(`${base}/read`, { path: params.path }, signal);
-        return { content: [{ type: "text", text: r.content }], details: { size: r.size } };
+        return { content: [{ type: "text", text: r.content }], details: { size: r.size, skill: false } };
       },
     }),
     defineTool({
