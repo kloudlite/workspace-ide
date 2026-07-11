@@ -255,9 +255,10 @@ export function createWsTools(config: WsConfig) {
       parameters: Type.Object({
         package: Type.String({ description: "Package name (e.g. go, nodejs, python3, gcc)" }),
       }),
-      execute: async (_id, params: { package: string }, signal) => {
-        const r: any = await postJson(`${base}/pkg/install/background`, { package: params.package }, signal);
-        return { content: [{ type: "text", text: `installing in session: ${r.session_id} (use logs/status)` }], details: { session_id: r.session_id } };
+      execute: async (_id, params: { package: string }, signal, onUpdate) => {
+        onUpdate?.({ content: [{ type: "text", text: `installing ${params.package}… this can take a few minutes` }], details: { running: true } });
+        const r: any = await postJson(`${base}/pkg/install`, { package: params.package }, signal);
+        return { content: [{ type: "text", text: r.ok ? `installed ${params.package}` : r.error || "failed" }], details: { running: false } };
       },
       renderCall: (args) => ({ render: () => [`pkg_install: ${args.package}`], invalidate: () => {} }),
     }),
@@ -288,9 +289,10 @@ export function createWsTools(config: WsConfig) {
       label: "Pkg Remove",
       description: "Uninstall a package from the remote workspace. Use this instead of raw package-manager commands.",
       parameters: Type.Object({ package: Type.String({ description: "Package name to uninstall" }) }),
-      execute: async (_id, params: { package: string }, signal) => {
-        const r: any = await postJson(`${base}/pkg/remove/background`, { package: params.package }, signal);
-        return { content: [{ type: "text", text: `removing in session: ${r.session_id} (use logs/status)` }], details: { session_id: r.session_id } };
+      execute: async (_id, params: { package: string }, signal, onUpdate) => {
+        onUpdate?.({ content: [{ type: "text", text: `removing ${params.package}… this can take a few minutes` }], details: { running: true } });
+        const r: any = await postJson(`${base}/pkg/remove`, { package: params.package }, signal);
+        return { content: [{ type: "text", text: r.ok ? `removed ${params.package}` : r.error || "failed" }], details: { running: false } };
       },
       renderCall: (args) => ({ render: () => [`pkg_remove: ${args.package}`], invalidate: () => {} }),
     }),

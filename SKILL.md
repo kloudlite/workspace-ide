@@ -68,10 +68,10 @@ ws lsp-sessions                                         # List active LSP sessio
 Packages are managed with version pinning. Each workspace has `ws.yaml` (manifest) and `ws.lock` (lockfile) — commit both to your repo for reproducibility.
 
 ```bash
-ws pkg install <pkg>[@version]    # Install (CLI blocks; harness runs this in background)
+ws pkg install <pkg>[@version]    # Install (blocks until done)
 ws pkg search <query>             # Search available packages
 ws pkg list                       # List installed packages
-ws pkg remove <pkg>               # Remove a package (CLI blocks; harness runs this in background)
+ws pkg remove <pkg>               # Remove a package (blocks until done)
 ws pkg apply                      # Install packages from ws.yaml
 ws pkg sync                       # Sync ws.yaml + ws.lock from current state
 ```

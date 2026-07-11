@@ -55,10 +55,10 @@ All tool calls are HTTP requests to the ws server. No local filesystem access.
 | `sessions` | `/sessions` | List all background sessions |
 | `lsp` | `/lsp/request` | LSP hover/definition/references/completion |
 | `diagnose` | `/lsp/diagnose` | LSP diagnostics for a file |
-| `pkg_install` | `/pkg/install/background` | Start package install in background |
+| `pkg_install` | `/pkg/install` | Install a package in foreground |
 | `pkg_search` | `/pkg/search` | Search packages |
 | `pkg_list` | `/pkg/list` | List installed packages |
-| `pkg_remove` | `/pkg/remove/background` | Start package uninstall in background |
+| `pkg_remove` | `/pkg/remove` | Uninstall a package in foreground |
 
 ### Remote extension
 
@@ -106,7 +106,7 @@ ws serve              # listens on :8321
 ws serve -p 3000      # custom port
 ```
 
-HTTP API mirrors the CLI tool-for-tool. Package installs/removes also have background endpoints: `POST /pkg/install/background`, `POST /pkg/remove/background` (returns a session id for `logs`/`status`). UI-only filesystem endpoints are also available: `POST /fs/tree`, `GET /fs/status`, `GET /fs/diff`.
+HTTP API mirrors the CLI tool-for-tool. UI-only filesystem endpoints are also available: `POST /fs/tree`, `GET /fs/status`, `GET /fs/diff`.
 
 ---
 

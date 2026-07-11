@@ -70,12 +70,12 @@ All 19 tools talk to the **remote workspace server** via HTTP API. Workspace pat
 
 | Tool | Parameters | Behaviour |
 |------|-----------|-----------|
-| `pkg_install` | `{ package }` | Start package install in background; returns a session id. Use `logs`/`status` to track progress. |
-| `pkg_remove` | `{ package }` | Start package uninstall in background; returns a session id. Use `logs`/`status` to track progress. |
+| `pkg_install` | `{ package }` | Install a package in foreground. UI shows an installing message while it runs. |
+| `pkg_remove` | `{ package }` | Uninstall a package in foreground. UI shows a removing message while it runs. |
 | `pkg_search` | `{ query }` | Search available packages |
 | `pkg_list` | `{}` | List installed packages |
 
-**If a package management tool is not in this table, it does not exist. Do not use bash-based package workarounds. After `pkg_install`/`pkg_remove`, check the returned session with `logs` or `status`.**
+**If a package management tool is not in this table, it does not exist. Do not use bash-based package workarounds. Wait for `pkg_install`/`pkg_remove` to finish before using the package.**
 
 ## Common Workflows
 
