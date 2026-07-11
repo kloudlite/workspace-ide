@@ -72,21 +72,12 @@ pub fn start_watch(root: &str) {
 
     tokio::task::spawn_blocking(move || {
         let rt = tokio::runtime::Handle::current();
-        let mut cleanup_counter = 0u32;
         let mut reconcile_counter = 0u64;
 
         loop {
             std::thread::sleep(Duration::from_millis(2000));
 
-            cleanup_counter += 1;
             reconcile_counter += 1;
-            if cleanup_counter >= 15 {
-                cleanup_counter = 0;
-                let killed = lsp::cleanup_idle();
-                if killed > 0 {
-                    eprintln!("ws: cleaned up {} idle LSP session(s)", killed);
-                }
-            }
             // ponytail: reconcile every ~10min (300 ticks × 2s)
             if reconcile_counter.checked_rem(300) == Some(0) {
                 let (added, removed) = lsp::reconcile_lsp();

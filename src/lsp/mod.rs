@@ -41,13 +41,11 @@ pub struct Diagnostic {
     pub code: Option<String>,
 }
 
-const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
-
 #[derive(Clone)]
 struct Session {
     server_id: String,
     root: String,
-    process: Arc<Mutex<Option<Child>>>,
+    _process: Arc<Mutex<Option<Child>>>,
     stdin: Arc<Mutex<Option<ChildStdin>>>,
     diags: Arc<Mutex<Vec<Diagnostic>>>,
     last_active: Instant,
@@ -278,7 +276,7 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
                 let session = Session {
                     server_id: sid.clone(),
                     root: root.clone(),
-                    process: Arc::new(Mutex::new(Some(child))),
+                    _process: Arc::new(Mutex::new(Some(child))),
                     stdin: Arc::new(Mutex::new(Some(stdin))),
                     diags: Arc::new(Mutex::new(Vec::new())),
                     last_active: Instant::now(),
@@ -577,25 +575,4 @@ pub fn reconcile_lsp() -> (usize, usize) {
         }
     }
     (installed_count, uninstalled)
-}
-
-pub fn cleanup_idle() -> usize {
-    let mut s = state().lock().unwrap();
-    let now = Instant::now();
-    let mut alive = Vec::new();
-    let mut killed = 0;
-    for sess in s.sessions.drain(..) {
-        if now.duration_since(sess.last_active) > IDLE_TIMEOUT {
-            if let Some(child) = sess.process.lock().unwrap().take() {
-                let _ = std::process::Command::new("kill")
-                    .arg(child.id().unwrap_or(0).to_string())
-                    .status();
-            }
-            killed += 1;
-        } else {
-            alive.push(sess);
-        }
-    }
-    s.sessions = alive;
-    killed
 }
