@@ -15,7 +15,7 @@ description: Use the ws CLI for remote headless-IDE development: semantic LSP na
 4. Make the smallest exact edit.
 5. Diagnose changed supported files.
 6. Run focused tests/type-check/build.
-7. Inspect `git diff` before completion.
+7. Inspect `git status --short`, then review tracked diffs or untracked files correctly.
 
 Show verification evidence; do not claim success because code merely looks correct.
 
@@ -31,11 +31,11 @@ ws find <path> --name '<glob>'
 ws grep <pattern> [path]
 ```
 
-Use `read` before exact-text `edit`. Prefer `edit` for small changes; `write` replaces the whole file. After code/config mutation, run `diagnose` when supported.
+Use `read` before exact-text `edit`. Prefer `edit` for small changes; `write` replaces the whole file. After code/config mutation, run `diagnose` when supported. `grep`/`find` return at most 200 results; grep snippets are capped at 500 characters. If truncated, narrow the path/pattern instead of treating output as complete.
 
 ## LSP
 
-Servers start by file type and remain warm for the server lifetime.
+Servers start by file type and remain warm for the server lifetime. Diagnostics and semantic requests reuse the same `(server, project root)` process, synchronize document versions, and support concurrent request routing.
 
 ```bash
 ws diagnose <path>
@@ -70,11 +70,13 @@ Positions are 0-indexed and must land on the identifier.
 
 Rename, code-action, and formatting results are previews. Apply reviewed changes explicitly with `edit`/`write`, then diagnose and test. Never blind-global-replace a symbol when semantic rename is available.
 
-If LSP is empty: verify the token position/server support, retry once after warmup, then use grep/read and state the fallback.
+For feature requests, derive the smallest observable behavior and identify the existing public owner before editing. Add no aliases, compatibility wrappers, configuration, or extension points without an existing caller/convention. Once focused acceptance tests pass, stop.
+
+If LSP is empty: verify the token position/server support, retry once after warmup, then use grep/read and state the fallback. Oversized results are explicitly truncated/refused; narrow the query before acting.
 
 ## Shell and background work
 
-`bash` blocks until completion and each call is a fresh shell:
+`bash` blocks until completion and each call is a fresh shell. Never hide test/build/diff failure with `|| true`:
 
 ```bash
 ws bash 'cargo test -p package'
@@ -116,7 +118,7 @@ Use the narrowest checks that prove the change:
 2. Focused formatter/linter/type-check.
 3. Nearest unit/package test.
 4. Wider build/test for cross-package impact.
-5. `git diff --check` and scoped `git diff`.
+5. Run `git status --short` once. Use `git diff --check` and scoped `git diff` for tracked files. For `??` files, `git diff` is empty by design; inspect once with `read` or `git diff --no-index /dev/null <file>`.
 
 Diagnostics are fast feedback, not a substitute for tests/builds. Security, migration, concurrency, public API, and data-loss-sensitive changes require stronger verification.
 
