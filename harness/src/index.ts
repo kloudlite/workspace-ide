@@ -67,7 +67,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "bash",
       label: "Bash",
-      description: "Run a finite shell command remotely. Preserve verification failures: never mask tests/builds/diff checks with || true. Use grep tool for searches and spawn for persistent commands.",
+      description: "Run a finite shell command remotely. Never mask verification with || true. Check git status before diff: git diff omits untracked files. Use grep tool for searches and spawn for persistent commands.",
       parameters: Type.Object({
         command: Type.String({ description: "Command to run" }),
       }),

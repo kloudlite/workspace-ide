@@ -136,7 +136,10 @@ Stop at the first set of checks that convincingly covers the change. Run one wel
 2. Focused formatter/linter/type-check for changed scope.
 3. Nearest unit test or package test.
 4. Wider build/test only when impact crosses package boundaries or the user requests it.
-5. `git diff --check` and `git diff -- <files>` before completion.
+5. Run `git status --short` once, then inspect changes correctly:
+   - tracked files: `git diff --check` and `git diff -- <files>`;
+   - untracked files (`??`): `git diff` will always be empty, so inspect each once with `read` or `git diff --no-index /dev/null <file>`;
+   - do not retry an empty tracked diff for an untracked or ignored path.
 
 Security, data-loss, migration, concurrency, and public API changes require stronger checks; do not simplify those away.
 
@@ -187,7 +190,7 @@ inspect diff
 
 ### Commit
 
-Before committing: diagnostics clean for changed supported files, focused verification passes, and diff contains no accidental/generated/secret files. Then use the repository's existing commit conventions.
+Before committing: diagnostics clean for changed supported files, focused verification passes, and status/diff contains no accidental/generated/secret files. Check status before diff so new untracked files are reviewed rather than mistaken for an empty change. Then use the repository's existing commit conventions.
 
 ## Troubleshooting
 
