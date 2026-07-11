@@ -374,34 +374,59 @@ async fn start_server(
         .map_err(|e| format!("spawn {}: {}", svr.id, e))?;
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
+    let mut reader = tokio::io::BufReader::new(stdout);
+    let mut data = Vec::new();
+
+    send_initialize(&mut stdin, root).await?;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        use tokio::io::AsyncReadExt;
+        let mut buf = vec![0u8; 8192];
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .await
+                .map_err(|e| format!("read initialize response: {}", e))?;
+            if n == 0 {
+                return Err("LSP exited during initialization".to_string());
+            }
+            data.extend_from_slice(&buf[..n]);
+            while let Some((msg, rest)) = parse_jsonrpc(&data) {
+                let initialized = msg.get("id").and_then(|v| v.as_u64()) == Some(1);
+                data = rest.to_vec();
+                if initialized {
+                    return Ok(());
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| "timed out initializing LSP".to_string())??;
+    write_msg(
+        &mut stdin,
+        &serde_json::json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }),
+    )
+    .await;
 
     let diags_arc: Arc<Mutex<HashMap<String, Vec<Diagnostic>>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let diags = diags_arc.clone();
     tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
-        let mut reader = tokio::io::BufReader::new(stdout);
         let mut buf = vec![0u8; 8192];
-        let mut data = Vec::new();
         loop {
-            match reader.read(&mut buf).await {
-                Ok(0) => break,
-                Ok(n) => {
-                    data.extend_from_slice(&buf[..n]);
-                    while let Some((msg, rest)) = parse_jsonrpc(&data) {
-                        if msg.get("method").and_then(|v| v.as_str()).is_some() {
-                            process_message(&msg, &diags).await;
-                        }
-                        data = rest.to_vec();
-                    }
+            while let Some((msg, rest)) = parse_jsonrpc(&data) {
+                if msg.get("method").and_then(|v| v.as_str()).is_some() {
+                    process_message(&msg, &diags).await;
                 }
-                Err(_) => break,
+                data = rest.to_vec();
+            }
+            match reader.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => data.extend_from_slice(&buf[..n]),
             }
         }
     });
 
-    send_initialize(&mut stdin, root).await?;
-    tokio::time::sleep(Duration::from_secs(3)).await;
     Ok((child, stdin, diags_arc))
 }
 
@@ -438,22 +463,10 @@ async fn send_initialize(stdin: &mut ChildStdin, root: &str) -> Result<(), Strin
             "rootUri": format!("file://{}", root),
             "workspaceFolders": [{ "uri": format!("file://{}", root), "name": "workspace" }],
             "clientInfo": { "name": "ws", "version": "0.1.0" },
-            "capabilities": {
-                "textDocument": {
-                    "synchronization": { "didOpen": true, "didChange": true },
-                    "diagnostic": { "dynamicRegistration": false }
-                },
-                "workspace": { "diagnostics": true }
-            }
+            "capabilities": {}
         }
     });
     write_msg(stdin, &msg).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    write_msg(
-        stdin,
-        &serde_json::json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }),
-    )
-    .await;
     Ok(())
 }
 
