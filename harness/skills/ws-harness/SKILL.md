@@ -22,6 +22,44 @@ Use the shortest loop that proves the change:
 
 Do not say a change works without reporting the check that passed. Fix root causes; do not hide diagnostics or weaken tests.
 
+## Minimum sufficient implementation
+
+Use this ladder before writing code; stop at the first rung that fully satisfies the request:
+
+1. **No change** — the behavior already exists, the requirement is speculative, or documentation/configuration solves it.
+2. **Delete/reuse** — remove obsolete code or reuse an existing symbol/pattern. Check with `workspace/symbol`, definitions, and references before adding a duplicate.
+3. **Standard library** — prefer the language's maintained primitive over custom helpers.
+4. **Native platform** — prefer browser/OS/runtime/database constraints and capabilities over application machinery.
+5. **Installed dependency** — use an existing project dependency when it directly solves the problem.
+6. **Direct local code** — write the smallest boring implementation that covers observed requirements.
+7. **Abstraction/new dependency** — only when multiple real uses or measured constraints justify ownership cost.
+
+### Complexity budget
+
+- Shortest correct diff wins; deletion is better than addition.
+- Do not create an interface for one implementation, a factory for one product, a wrapper around one direct call, or configuration for a value that never varies operationally.
+- Do not add compatibility aliases, fallback paths, caches, retries, concurrency, plugins, hooks, feature flags, or “future-proof” extension points without a present requirement or measurement.
+- Do not refactor neighboring code merely because it could be cleaner. Touch only what the requested behavior and its proof require.
+- Prefer explicit, local, boring code over clever generic machinery. A future requirement can pay for its own abstraction.
+- Before adding a dependency, confirm stdlib/native/existing dependencies cannot do it. Project dependencies increase install, update, security, and context cost.
+- A custom branch/loop/parser for a common transformation is a last resort. First compose stdlib primitives for splitting, joining, mapping, sorting, grouping, cloning, URL/path/date handling, encoding, and validation. Example: separator/token normalization should prefer `FieldsFunc` + `Join` (+ case conversion) over a hand-written scanner when semantics match.
+- Do not trade maintainability for speculative allocation/CPU gains (`Builder`, pooling, custom byte scans, concurrency) unless the user requests performance or a measurement shows the standard composition is inadequate.
+- If a common operation takes more than roughly ten lines of new logic, pause before editing and check whether stdlib/native/existing code expresses it with fewer states and branches. Compare the complete diff, not cleverness.
+- When a deliberate shortcut has a known ceiling, leave one concise `ponytail:` comment naming the ceiling and upgrade trigger, not an essay.
+
+### Efficient proof
+
+Minimal code still needs proportional proof:
+
+- Trivial one-line changes need diagnostics and the nearest existing check, not a new test framework.
+- New branching, parsing, state transitions, security/money/data-loss behavior, or bug fixes need the smallest runnable regression test that would fail before the change.
+- Reuse existing test style and infrastructure; do not add fixtures/helpers for one test unless they reduce total code.
+- Never simplify away trust-boundary validation, data-loss prevention, security controls, accessibility, required error handling, or physical calibration.
+
+Before the first edit, silently answer: can this be deleted/reused, can stdlib/native do it, and what is the smallest check? If the proposed direct implementation has more moving parts than a standard composition, choose the standard composition.
+
+In the final response, lead with what changed and the passing check. Mention a deliberately skipped larger design only when the user might reasonably expect it or when a measured threshold should trigger it.
+
 ## LSP: primary code-intelligence tool
 
 Use LSP for semantic questions; use text tools for text questions.
@@ -149,7 +187,9 @@ Security, data-loss, migration, concurrency, and public API changes require stro
 
 Before editing, derive the smallest observable acceptance behavior and choose the existing layer that owns the public API. Use symbols/references to confirm that boundary.
 
+- First ask whether existing behavior/API already covers the request; reuse or delete before adding.
 - Add one API per required operation at the owning boundary; keep lower-layer helpers private/minimal where the language permits.
+- Prefer stdlib/native/existing dependencies before local machinery or a new package.
 - Do not add aliases, compatibility wrappers, alternate names, configuration, or extension points unless an existing caller/convention requires them.
 - Prefer one coherent implementation pass: source + focused tests, then diagnose and verify.
 - Once acceptance tests pass and the requested behavior is present, stop. Do not reopen the design to add speculative convenience APIs.

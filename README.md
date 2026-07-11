@@ -157,6 +157,9 @@ Diagnostics are fast feedback, not a substitute for tests or builds.
 The bundled [`ws-harness` skill](harness/skills/ws-harness/SKILL.md) teaches pi to:
 
 - use LSP for semantic questions and grep for text questions;
+- follow a minimum-sufficient ladder: no change → delete/reuse → stdlib → native platform → installed dependency → direct code → justified abstraction;
+- prefer the shortest correct diff and reject speculative wrappers, aliases, configuration, dependencies, and extension points;
+- compose standard-library/native primitives before writing custom loops/parsers, and avoid unmeasured micro-optimizations;
 - scope monorepo exploration before searching;
 - inspect definitions/implementations/references before shared refactors;
 - preview semantic renames rather than global text replacement;
@@ -174,6 +177,8 @@ semantic exploration → relevant reads → minimal edits
 ```
 
 For untracked files, remember that `git diff` is empty by design: check `git status --short`, then review with `read` or `git diff --no-index /dev/null <file>` once.
+
+The minimum-sufficient implementation rules are adapted from [Ponytail](https://github.com/DietrichGebert/ponytail) (MIT): lazy means efficient, not careless. Validation, security, accessibility, data-loss protection, and proportional runnable checks remain non-negotiable.
 
 ## TUI integration
 

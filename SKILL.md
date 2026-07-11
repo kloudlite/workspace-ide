@@ -19,6 +19,22 @@ description: Use the ws CLI for remote headless-IDE development: semantic LSP na
 
 Show verification evidence; do not claim success because code merely looks correct.
 
+## Minimum sufficient implementation
+
+Stop at the first rung that fully satisfies the request:
+
+1. no change if behavior exists or the need is speculative;
+2. delete/reuse existing code (confirm with symbols/references);
+3. standard library;
+4. native browser/OS/runtime/database capability;
+5. already-installed dependency;
+6. smallest direct local implementation;
+7. abstraction or new dependency only for multiple real uses or measured constraints.
+
+Shortest correct diff wins. Do not add one-use interfaces/factories/wrappers, constant-valued configuration, compatibility aliases, fallback paths, caches, retries, concurrency, plugins, or future extension points without a present requirement. Do not refactor unrelated neighbors. Before writing a custom branch/loop/parser for a common transformation, compose stdlib primitives for splitting, joining, mapping, sorting, grouping, URL/path/date handling, encoding, or validation (`FieldsFunc` + `Join` for separator normalization when semantics match). Do not hand-optimize allocations/CPU with builders, pools, byte scanners, or concurrency without a request or measurement. If common logic exceeds roughly ten lines, pause and compare it with stdlib/native options before editing.
+
+Minimal is not negligent: preserve trust-boundary validation, data-loss protection, security, accessibility, required errors, and physical calibration. Non-trivial branches/parsers/state/bug fixes need the smallest runnable regression check; reuse existing test infrastructure. Mark a deliberate shortcut with one `ponytail:` comment only when it has a known ceiling and upgrade trigger.
+
 ## Files
 
 ```bash
@@ -70,7 +86,7 @@ Positions are 0-indexed and must land on the identifier.
 
 Rename, code-action, and formatting results are previews. Apply reviewed changes explicitly with `edit`/`write`, then diagnose and test. Never blind-global-replace a symbol when semantic rename is available.
 
-For feature requests, derive the smallest observable behavior and identify the existing public owner before editing. Add no aliases, compatibility wrappers, configuration, or extension points without an existing caller/convention. Once focused acceptance tests pass, stop.
+For feature requests, derive the smallest observable behavior, check whether existing behavior already covers it, and identify the existing public owner before editing. Prefer stdlib/native/existing dependencies. Add no aliases, compatibility wrappers, configuration, or extension points without an existing caller/convention. Once focused acceptance tests pass, stop.
 
 If LSP is empty: verify the token position/server support, retry once after warmup, then use grep/read and state the fallback. Oversized results are explicitly truncated/refused; narrow the query before acting.
 
