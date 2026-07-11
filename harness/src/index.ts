@@ -30,6 +30,19 @@ function boundedOutput(text: string, limit = 50_000): string {
   return `${text.slice(0, half)}\n[truncated ${text.length - limit} characters]\n${text.slice(-half)}`;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+function formatProcessOutput(stdout = "", stderr = "", footer?: string): string {
+  stdout = boundedOutput(stdout);
+  stderr = boundedOutput(stderr);
+  const sections = [stdout && (stderr ? `[stdout]\n${stdout}` : stdout), stderr && `[stderr]\n${stderr}`, footer].filter(Boolean);
+  return sections.join("\n") || "(no output)";
+}
+
 function compactLspResult(result: any): any {
   if (Array.isArray(result) && result.length > 200) {
     return { items: result.slice(0, 200), truncated: true, total: result.length, message: "Narrow the query before acting." };
@@ -42,6 +55,82 @@ function compactLspResult(result: any): any {
     return { truncated: true, size, message: "LSP result too large to use safely; narrow the file, symbol, or range." };
   }
   return result;
+}
+
+const symbolKinds = ["", "file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum", "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null", "enum-member", "struct", "event", "operator", "type-parameter"];
+
+function lspPath(uri = ""): string {
+  try { return decodeURIComponent(uri.replace(/^file:\/\//, "")); } catch { return uri.replace(/^file:\/\//, ""); }
+}
+
+function lspLocation(item: any): string {
+  const location = item?.location || item;
+  const uri = location?.uri || item?.targetUri || "";
+  const range = location?.range || item?.targetSelectionRange || item?.targetRange;
+  if (!uri) return "";
+  const start = range?.start;
+  return `${lspPath(uri)}${start ? `:${start.line + 1}:${start.character + 1}` : ""}`;
+}
+
+function renderEdits(result: any): string[] {
+  const lines: string[] = [];
+  for (const [uri, edits] of Object.entries(result?.changes || {})) {
+    for (const edit of edits as any[]) lines.push(`${lspLocation({ uri, range: edit.range })} → ${JSON.stringify(edit.newText)}`);
+  }
+  for (const change of result?.documentChanges || []) {
+    const uri = change?.textDocument?.uri || change?.uri;
+    for (const edit of change?.edits || []) lines.push(`${lspLocation({ uri, range: edit.range })} → ${JSON.stringify(edit.newText)}`);
+  }
+  return lines;
+}
+
+function formatLspResult(method: string, raw: any): string {
+  const result = compactLspResult(raw);
+  if (result == null) return "(none)";
+  const array = Array.isArray(result) ? result : Array.isArray(result.items) ? result.items : null;
+  const footer = result?.truncated ? `\n[truncated: ${array?.length || 0} of ${result.total || "many"}; narrow the query]` : "";
+  if (result?.truncated && !array && result.message) return `[truncated ${result.size || "large"}-character result] ${result.message}`;
+
+  if (method === "textDocument/documentSymbol" || method === "workspace/symbol") {
+    const walk = (items: any[], depth = 0): string[] => items.flatMap((item) => {
+      const range = item.selectionRange || item.range;
+      const location = lspLocation(item) || (range ? `${range.start.line + 1}:${range.start.character + 1}` : "");
+      const line = `${"  ".repeat(depth)}${item.name} [${symbolKinds[item.kind] || `kind-${item.kind}`}]${location ? ` — ${location}` : ""}`;
+      return [line, ...walk(item.children || [], depth + 1)];
+    });
+    return (walk(array || []).join("\n") || "(none)") + footer;
+  }
+  if (["textDocument/definition", "textDocument/typeDefinition", "textDocument/implementation", "textDocument/references"].includes(method)) {
+    return ((array || [result]).map(lspLocation).filter(Boolean).join("\n") || "(none)") + footer;
+  }
+  if (method === "textDocument/hover") {
+    const contents = result.contents;
+    if (typeof contents === "string") return contents;
+    if (typeof contents?.value === "string") return contents.value;
+    if (Array.isArray(contents)) return contents.map((x: any) => typeof x === "string" ? x : x.value || JSON.stringify(x)).join("\n");
+  }
+  if (method === "textDocument/signatureHelp") {
+    return (result.signatures || []).map((s: any, i: number) => `${i === result.activeSignature ? "*" : "-"} ${s.label}${s.documentation?.value ? `\n  ${s.documentation.value}` : ""}`).join("\n") || "(none)";
+  }
+  if (method === "textDocument/completion") {
+    return (array || []).map((item: any) => `${item.label}${item.detail ? ` — ${item.detail}` : ""}`).join("\n") + footer || "(none)";
+  }
+  if (method === "textDocument/rename" || method === "textDocument/formatting") {
+    const edits = method === "textDocument/formatting" ? (array || []).map((edit: any) => `${edit.range.start.line + 1}:${edit.range.start.character + 1} → ${JSON.stringify(edit.newText)}`) : renderEdits(result);
+    return edits.join("\n") || "(none)";
+  }
+  if (method === "textDocument/codeAction") {
+    const actions = (array || []).flatMap((action: any, i: number) => [
+      `${i + 1}. ${action.title}${action.kind ? ` [${action.kind}]` : ""}`,
+      ...renderEdits(action.edit).map((edit) => `   ${edit}`),
+    ]);
+    return actions.join("\n") + footer || "(none)";
+  }
+  if (method === "textDocument/prepareRename") {
+    const range = result.range || result;
+    return `${result.placeholder || "renameable"} — ${range.start.line + 1}:${range.start.character + 1}-${range.end.line + 1}:${range.end.character + 1}`;
+  }
+  return JSON.stringify(result, null, 2);
 }
 
 function postJson(url: string, body: unknown, signal?: AbortSignal): Promise<any> {
@@ -94,12 +183,10 @@ export function createWsTools(config: WsConfig) {
       }),
       execute: async (_id, params: { command: string }, signal) => {
         const r: any = await postJson(`${base}/bash`, { command: params.command }, signal);
-        const stdout = boundedOutput(r.stdout || "");
-        const stderr = boundedOutput(r.stderr || "");
-        const text = stdout && stderr ? `[stdout]\n${stdout}\n[stderr]\n${stderr}` : stdout || stderr;
+        const text = formatProcessOutput(r.stdout, r.stderr, `[exit ${r.exit_code}]`);
         return {
           content: [{ type: "text", text }],
-          details: { exitCode: r.exit_code, truncated: stdout !== (r.stdout || "") || stderr !== (r.stderr || "") },
+          details: { exitCode: r.exit_code, truncated: text.includes("[truncated ") },
         };
       },
     }),
@@ -113,11 +200,12 @@ export function createWsTools(config: WsConfig) {
         newText: Type.String({ description: "Replacement text" }),
       }),
       execute: async (_id, params: { path: string; oldText: string; newText: string }, signal) => {
-        await postJson(`${base}/edit`, {
+        const r: any = await postJson(`${base}/edit`, {
           path: params.path,
           edits: [{ old_text: params.oldText, new_text: params.newText }],
         }, signal);
-        return { content: [{ type: "text", text: "ok" }], details: {} };
+        const errors = r.errors?.length ? `\n${r.errors.map((e: string) => `! ${e}`).join("\n")}` : "";
+        return { content: [{ type: "text", text: `updated ${params.path} — ${r.applied} replacement${r.applied === 1 ? "" : "s"}${errors}` }], details: { applied: r.applied } };
       },
     }),
     defineTool({
@@ -129,8 +217,8 @@ export function createWsTools(config: WsConfig) {
         content: Type.String({ description: "Content to write" }),
       }),
       execute: async (_id, params: { path: string; content: string }, signal) => {
-        await postJson(`${base}/write`, { path: params.path, content: params.content }, signal);
-        return { content: [{ type: "text", text: "ok" }], details: {} };
+        const r: any = await postJson(`${base}/write`, { path: params.path, content: params.content }, signal);
+        return { content: [{ type: "text", text: `wrote ${params.path} — ${formatBytes(r.size)}` }], details: { size: r.size } };
       },
     }),
     defineTool({
@@ -150,7 +238,7 @@ export function createWsTools(config: WsConfig) {
         });
         if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}: ${await resp.text()}`);
         const r: any = await resp.json();
-        return { content: [{ type: "text", text: `uploaded ${r.size} bytes` }], details: { size: r.size } };
+        return { content: [{ type: "text", text: `uploaded ${params.local_path} → ${params.remote_path} — ${formatBytes(r.size)}` }], details: { size: r.size } };
       },
     }),
 
@@ -167,7 +255,7 @@ export function createWsTools(config: WsConfig) {
         const body: Record<string, string> = { pattern: params.pattern, ...(params.path ? { path: params.path } : {}) };
         const r: any = await postJson(`${base}/grep`, body, signal);
         const matches = (r.matches || []).map((m: any) => `${m.path}:${m.line_number}: ${m.text}`).join("\n");
-        const text = matches + (r.truncated ? "\n[truncated at 200 matches; narrow path or pattern]" : "");
+        const text = (matches || "(no matches)") + (r.truncated ? "\n[truncated at 200 matches; narrow path or pattern]" : "");
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -182,7 +270,8 @@ export function createWsTools(config: WsConfig) {
       execute: async (_id, params: { path: string; name?: string }, signal) => {
         const body: Record<string, string> = { path: params.path, ...(params.name ? { name: params.name } : {}) };
         const r: any = await postJson(`${base}/find`, body, signal);
-        const text = (r.files || []).join("\n") + (r.truncated ? "\n[truncated at 200 files; narrow path or pattern]" : "");
+        const files = (r.files || []).join("\n");
+        const text = (files || "(no files)") + (r.truncated ? "\n[truncated at 200 files; narrow path or pattern]" : "");
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -193,8 +282,7 @@ export function createWsTools(config: WsConfig) {
       parameters: Type.Object({ path: Type.String({ description: "Directory path" }) }),
       execute: async (_id, params: { path: string }, signal) => {
         const r: any = await postJson(`${base}/ls`, { path: params.path }, signal);
-        // ponytail: minimal listing — names with / for dirs, no JSON bloat
-        const text = (r.entries || []).map((e: any) => e.is_dir ? `${e.name}/` : e.name).join("  ");
+        const text = (r.entries || []).map((e: any) => e.is_dir ? `${e.name}/` : `${e.name}  ${formatBytes(e.size)}`).join("\n") || "(empty directory)";
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -207,7 +295,7 @@ export function createWsTools(config: WsConfig) {
       parameters: Type.Object({ command: Type.String({ description: "Command to run" }) }),
       execute: async (_id, params: { command: string }, signal) => {
         const r: any = await postJson(`${base}/spawn`, { command: params.command }, signal);
-        return { content: [{ type: "text", text: `session: ${r.session_id}` }], details: {} };
+        return { content: [{ type: "text", text: `started ${r.session_id}\npid ${r.pid}\n${params.command}` }], details: { sessionId: r.session_id, pid: r.pid } };
       },
     }),
     defineTool({
@@ -217,8 +305,9 @@ export function createWsTools(config: WsConfig) {
       parameters: Type.Object({ session_id: Type.String({ description: "Session ID from spawn" }) }),
       execute: async (_id, params: { session_id: string }, signal) => {
         const r: any = await postJson(`${base}/logs`, { session_id: params.session_id }, signal);
-        const text = r.stdout || r.stderr || "(no output)";
-        return { content: [{ type: "text", text }], details: {} };
+        const state = r.running ? "running" : `done, exit ${r.exit_code ?? "unknown"}`;
+        const text = formatProcessOutput(r.stdout, r.stderr, `[${state}]`);
+        return { content: [{ type: "text", text }], details: { running: r.running, exitCode: r.exit_code } };
       },
     }),
     defineTool({
@@ -228,8 +317,8 @@ export function createWsTools(config: WsConfig) {
       parameters: Type.Object({ session_id: Type.String({ description: "Session ID from spawn" }) }),
       execute: async (_id, params: { session_id: string }, signal) => {
         const r: any = await postJson(`${base}/status`, { session_id: params.session_id }, signal);
-        const text = r.running ? `running: ${r.command}` : `done (exit ${r.exit_code})`;
-        return { content: [{ type: "text", text }], details: {} };
+        const text = `${params.session_id}\n${r.running ? `running — pid ${r.pid}` : `done — exit ${r.exit_code ?? "unknown"}`}\n${r.command}`;
+        return { content: [{ type: "text", text }], details: { running: r.running, exitCode: r.exit_code } };
       },
     }),
     defineTool({
@@ -239,7 +328,7 @@ export function createWsTools(config: WsConfig) {
       parameters: Type.Object({ session_id: Type.String({ description: "Session ID from spawn" }) }),
       execute: async (_id, params: { session_id: string }, signal) => {
         const r: any = await postJson(`${base}/kill`, { session_id: params.session_id }, signal);
-        return { content: [{ type: "text", text: r.killed ? "killed" : "not running" }], details: {} };
+        return { content: [{ type: "text", text: `${params.session_id} — ${r.killed ? "killed" : r.message || "not running"}` }], details: { killed: r.killed } };
       },
     }),
     defineTool({
@@ -250,9 +339,9 @@ export function createWsTools(config: WsConfig) {
       execute: async (_id, _params: {}, signal) => {
         const resp = await fetch(`${base}/sessions`, { signal });
         const r = await resp.json();
-        const text = (r || []).map((s: any) => 
-          `${s.session_id.slice(0, 8)}  ${s.running ? "running" : "done"}  ${s.command}`
-        ).join("\n") || "(none)";
+        const text = (r || []).map((s: any) =>
+          `${s.session_id}\n  ${s.running ? `running, pid ${s.pid}` : `done, exit ${s.exit_code ?? "unknown"}`}\n  ${s.command}`
+        ).join("\n") || "(no background sessions)";
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -267,7 +356,7 @@ export function createWsTools(config: WsConfig) {
         const resp = await fetch(`${base}/lsp/servers`, { signal });
         if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}: ${await resp.text()}`);
         const r = await resp.json();
-        const text = (r || []).map((s: any) => `${s.id} (${s.language_id}): ${s.extensions.join(", ")}`).join("\n") || "(none)";
+        const text = (r || []).map((s: any) => `${s.id} [${s.language_id}, ${s.root_mode}]\n  ${s.extensions.join(" ")}\n  ${s.binary}`).join("\n") || "(no LSP servers)";
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -280,7 +369,7 @@ export function createWsTools(config: WsConfig) {
         const resp = await fetch(`${base}/lsp/sessions`, { signal });
         if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}: ${await resp.text()}`);
         const r = await resp.json();
-        const text = (r || []).map(([server, root]: [string, string]) => `${server}  ${root}`).join("\n") || "(none)";
+        const text = (r || []).map(([server, root]: [string, string]) => `${server}\n  ${root}`).join("\n") || "(no running LSP sessions)";
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -316,7 +405,7 @@ export function createWsTools(config: WsConfig) {
       }),
       execute: async (_id, params: Record<string, any>, signal) => {
         const r: any = await postJson(`${base}/lsp/request`, params, signal);
-        const text = JSON.stringify(compactLspResult(r.result ?? r));
+        const text = formatLspResult(params.method, r.result ?? r);
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -327,8 +416,9 @@ export function createWsTools(config: WsConfig) {
       parameters: Type.Object({ path: Type.String({ description: "File path" }) }),
       execute: async (_id, params: { path: string }, signal) => {
         const r: any = await postJson(`${base}/lsp/diagnose`, { path: params.path }, signal);
+        const severity = ["", "error", "warning", "info", "hint"];
         const text = (r || []).map((d: any) =>
-          `${d.path}:${d.line + 1}:${d.column + 1}: severity ${d.severity}: ${d.message}${d.code ? ` [${d.code}]` : ""}`).join("\n") || "(none)";
+          `${d.path}:${d.line + 1}:${d.column + 1} — ${severity[d.severity] || `severity-${d.severity}`}: ${d.message}${d.code ? ` [${d.code}]` : ""}`).join("\n") || "(no diagnostics)";
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -344,7 +434,7 @@ export function createWsTools(config: WsConfig) {
       execute: async (_id, params: { package: string }, signal, onUpdate) => {
         onUpdate?.({ content: [{ type: "text", text: `installing ${params.package}… this can take a few minutes` }], details: { running: true } });
         const r: any = await postJson(`${base}/pkg/install`, { package: params.package }, signal);
-        return { content: [{ type: "text", text: r.ok ? `installed ${params.package}` : r.error || "failed" }], details: { running: false } };
+        return { content: [{ type: "text", text: r.ok ? `installed ${params.package}` : `failed ${params.package}: ${r.error || "unknown error"}` }], details: { running: false, ok: r.ok } };
       },
       renderCall: (args) => ({ render: () => [`pkg_install: ${args.package}`], invalidate: () => {} }),
     }),
@@ -355,7 +445,7 @@ export function createWsTools(config: WsConfig) {
       parameters: Type.Object({ query: Type.String({ description: "Search query" }) }),
       execute: async (_id, params: { query: string }, signal) => {
         const r: any = await postJson(`${base}/pkg/search`, { query: params.query }, signal);
-        const text = (r.packages || []).join("\n") || "No results";
+        const text = (r.packages || []).join("\n") || `(no packages matching ${JSON.stringify(params.query)})`;
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -366,7 +456,7 @@ export function createWsTools(config: WsConfig) {
       parameters: Type.Object({}),
       execute: async (_id, _params: {}, signal) => {
         const r: any = await postJson(`${base}/pkg/list`, {}, signal);
-        const text = (r.packages || []).join("\n") || "(empty)";
+        const text = (r.packages || []).join("\n") || "(no installed packages)";
         return { content: [{ type: "text", text }], details: {} };
       },
     }),
@@ -378,7 +468,7 @@ export function createWsTools(config: WsConfig) {
       execute: async (_id, params: { package: string }, signal, onUpdate) => {
         onUpdate?.({ content: [{ type: "text", text: `removing ${params.package}… this can take a few minutes` }], details: { running: true } });
         const r: any = await postJson(`${base}/pkg/remove`, { package: params.package }, signal);
-        return { content: [{ type: "text", text: r.ok ? `removed ${params.package}` : r.error || "failed" }], details: { running: false } };
+        return { content: [{ type: "text", text: r.ok ? `removed ${params.package}` : `failed ${params.package}: ${r.error || "unknown error"}` }], details: { running: false, ok: r.ok } };
       },
       renderCall: (args) => ({ render: () => [`pkg_remove: ${args.package}`], invalidate: () => {} }),
     }),

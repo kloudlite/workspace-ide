@@ -99,6 +99,8 @@ Tool output is intentionally bounded:
 
 Truncated results are never presented as complete. Narrow the project path, query, symbol, or range before acting.
 
+All tool output is human/model readable rather than raw API JSON: paths and 1-indexed locations for LSP, symbol kind labels, named diagnostic severities, explicit shell exit codes and stderr, mutation byte/replacement counts, full reusable background session IDs, and line-oriented lists. File content itself remains raw so exact edits stay reliable.
+
 ## Language intelligence
 
 Language servers are keyed by `(server, project root)`, initialized once, and retained for the `ws serve` lifetime. Diagnostics and semantic requests share the same process and synchronized document versions. Concurrent JSON-RPC requests are routed by request ID.
@@ -212,7 +214,7 @@ ws pkg apply
 ws pkg sync
 ```
 
-Project dependencies continue to use the repository's existing package manager (`pnpm`, `npm`, `bun`, `cargo`, `go mod`, etc.). `ws.yaml` records workspace tools and `ws.lock` pins them; commit both when tool state changes. Package restoration runs when the server starts.
+Project dependencies continue to use the repository's existing package manager (`pnpm`, `npm`, `bun`, `cargo`, `go mod`, etc.). `ws.yaml` records workspace tools and `ws.lock` pins them; commit both when tool state changes. Package restoration runs when the server starts. Profile entries are canonicalized by package attribute and installation is idempotent, preventing reconcile loops such as repeated `nodejs-N` entries.
 
 ## Standalone CLI
 

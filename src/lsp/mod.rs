@@ -618,13 +618,14 @@ pub fn reconcile_lsp() -> (usize, usize) {
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
+        let installed = crate::nix::is_installed(pkg);
         if active.contains(pkg) {
-            if !on_path {
+            if !on_path && !installed {
                 eprintln!("ws: installing LSP pkg: {}", pkg);
                 let _ = crate::nix::install_auto(pkg);
                 installed_count += 1;
             }
-        } else if on_path {
+        } else if installed {
             eprintln!("ws: uninstalling unused LSP pkg: {}", pkg);
             let _ = crate::nix::remove(pkg);
             uninstalled += 1;

@@ -81,6 +81,9 @@ pub fn install_auto(input: &str) -> Result<String, String> {
 fn install_inner(input: &str) -> Result<String, String> {
     let (name, version) = input.split_once('@').unwrap_or((input, ""));
     if version.is_empty() {
+        if is_installed(name) {
+            return Ok(format!("{} already installed", name));
+        }
         install_one(&resolve_flake(), name)
     } else {
         install_version(name, version)
@@ -142,13 +145,22 @@ fn install_version(name: &str, version: &str) -> Result<String, String> {
 }
 
 pub fn remove(package: &str) -> Result<String, String> {
-    let output = nix_cmd()?
-        .args(["profile", "remove", package])
-        .output()
-        .map_err(|e| format!("nix remove: {}", e))?;
+    let elements: Vec<String> = profile_elements()?
+        .into_iter()
+        .filter(|(_, name, _)| name == package)
+        .map(|(element, _, _)| element)
+        .collect();
+    if elements.is_empty() {
+        return Ok(format!("{} not installed", package));
+    }
+    let mut cmd = nix_cmd()?;
+    cmd.args(["profile", "remove"]);
+    cmd.args(&elements);
+    let output = cmd.output().map_err(|e| format!("nix remove: {}", e))?;
     if output.status.success() {
+        explicit_packages().lock().unwrap().remove(package);
         let _ = write_workspace_files();
-        Ok("removed".into())
+        Ok(format!("removed {} profile entries", elements.len()))
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
@@ -183,24 +195,48 @@ pub fn search(query: &str) -> Result<Vec<String>, String> {
 }
 
 pub fn list() -> Result<Vec<String>, String> {
-    get_installed().map(|m| m.into_keys().collect())
+    let mut packages: Vec<String> = get_installed()?.into_keys().collect();
+    packages.sort();
+    Ok(packages)
 }
 
-fn get_installed() -> Result<HashMap<String, String>, String> {
+pub fn is_installed(package: &str) -> bool {
+    get_installed()
+        .map(|packages| packages.contains_key(package))
+        .unwrap_or(false)
+}
+
+fn profile_package_name(element: &str, info: &serde_json::Value) -> String {
+    info.get("attrPath")
+        .and_then(|v| v.as_str())
+        .and_then(|v| v.rsplit('.').next())
+        .unwrap_or(element)
+        .to_string()
+}
+
+fn profile_elements() -> Result<Vec<(String, String, String)>, String> {
     let val = get_profile_json()?;
-    let mut map = HashMap::new();
+    let mut result = Vec::new();
     if let Some(elements) = val.get("elements").and_then(|e| e.as_object()) {
-        for (name, info) in elements {
+        for (element, info) in elements {
+            let package = profile_package_name(element, info);
             let store = info
                 .get("storePaths")
                 .and_then(|p| p.as_array())
                 .and_then(|a| a.first())
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            map.insert(name.clone(), store.to_string());
+            result.push((element.clone(), package, store.to_string()));
         }
     }
-    Ok(map)
+    Ok(result)
+}
+
+fn get_installed() -> Result<HashMap<String, String>, String> {
+    Ok(profile_elements()?
+        .into_iter()
+        .map(|(_, package, store)| (package, store))
+        .collect())
 }
 
 fn get_profile_json() -> Result<serde_json::Value, String> {
@@ -325,4 +361,19 @@ fn get_nixpkgs_revision() -> Result<String, String> {
         }
     }
     Err("revision not found".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::profile_package_name;
+
+    #[test]
+    fn canonicalizes_duplicate_profile_element_names() {
+        let info = serde_json::json!({ "attrPath": "legacyPackages.x86_64-linux.nodejs" });
+        assert_eq!(profile_package_name("nodejs-48", &info), "nodejs");
+        assert_eq!(
+            profile_package_name("custom", &serde_json::json!({})),
+            "custom"
+        );
+    }
 }
