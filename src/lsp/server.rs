@@ -30,7 +30,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".rs"],
         binary: "rust-analyzer",
         args: &[],
-        needs_lockfile: false,
+        needs_lockfile: true,
         nix_packages: &["cargo", "rustc"],
     },
     LspServer {
@@ -39,7 +39,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".go"],
         binary: "gopls",
         args: &[],
-        needs_lockfile: false,
+        needs_lockfile: true,
         nix_packages: &["go"],
     },
     LspServer {
@@ -48,7 +48,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".py", ".pyi"],
         binary: "pyright-langserver",
         args: &["--stdio"],
-        needs_lockfile: false,
+        needs_lockfile: true,
         nix_packages: &["python3"],
     },
     LspServer {
@@ -57,7 +57,7 @@ pub static SERVERS: &[LspServer] = &[
         extensions: &[".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh", ".hxx"],
         binary: "clangd",
         args: &[],
-        needs_lockfile: false,
+        needs_lockfile: true,
         nix_packages: &["clang-tools"],
     },
     LspServer {

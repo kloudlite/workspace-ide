@@ -441,29 +441,38 @@ async fn process_message(msg: &serde_json::Value, diags: &Arc<Mutex<Vec<Diagnost
 }
 
 fn find_root(file_path: &str, needs_lockfile: bool) -> String {
+    let workspace = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    if !needs_lockfile {
+        return workspace.to_string_lossy().to_string();
+    }
+
     let path = Path::new(file_path);
     let dir = path.parent().unwrap_or(Path::new("."));
-    if !needs_lockfile {
-        return dir.to_string_lossy().to_string();
-    }
-    let lockfiles = [
+    let markers = [
+        "package.json",
         "package-lock.json",
         "yarn.lock",
         "pnpm-lock.yaml",
         "bun.lockb",
         "bun.lock",
+        "Cargo.toml",
         "Cargo.lock",
+        "go.mod",
+        "go.work",
+        "pyproject.toml",
+        "requirements.txt",
+        "setup.py",
+        "compile_commands.json",
+        ".clangd",
     ];
     let mut current = Some(dir);
     while let Some(d) = current {
-        for lf in &lockfiles {
-            if d.join(lf).exists() {
-                return d.to_string_lossy().to_string();
-            }
+        if markers.iter().any(|m| d.join(m).exists()) {
+            return d.to_string_lossy().to_string();
         }
         current = d.parent();
     }
-    dir.to_string_lossy().to_string()
+    workspace.to_string_lossy().to_string()
 }
 
 /// Build LSP request params for a position. Shared by server.rs and mcp.rs.
