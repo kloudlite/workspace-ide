@@ -1,5 +1,6 @@
 pub mod server;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::AtomicU64;
@@ -47,7 +48,8 @@ struct Session {
     root: String,
     _process: Arc<Mutex<Option<Child>>>,
     stdin: Arc<Mutex<Option<ChildStdin>>>,
-    diags: Arc<Mutex<Vec<Diagnostic>>>,
+    diags: Arc<Mutex<HashMap<String, Vec<Diagnostic>>>>,
+    versions: Arc<Mutex<HashMap<String, i32>>>,
     last_active: Instant,
 }
 
@@ -90,6 +92,21 @@ async fn send_did_open(stdin: &mut ChildStdin, path: &str, language_id: &str, co
                     "version": 1,
                     "text": content,
                 }
+            }
+        }),
+    )
+    .await;
+}
+
+async fn send_did_change(stdin: &mut ChildStdin, path: &str, version: i32, content: &str) {
+    write_msg(
+        stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didChange",
+            "params": {
+                "textDocument": { "uri": format!("file://{}", path), "version": version },
+                "contentChanges": [{ "text": content }],
             }
         }),
     )
@@ -272,13 +289,14 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
         let session = match session {
             Some(s) => s,
             None => {
-                let (child, stdin) = start_server(svr, &root).await?;
+                let (child, stdin, diags) = start_server(svr, &root).await?;
                 let session = Session {
                     server_id: sid.clone(),
                     root: root.clone(),
                     _process: Arc::new(Mutex::new(Some(child))),
                     stdin: Arc::new(Mutex::new(Some(stdin))),
-                    diags: Arc::new(Mutex::new(Vec::new())),
+                    diags,
+                    versions: Arc::new(Mutex::new(HashMap::new())),
                     last_active: Instant::now(),
                 };
                 let cloned = session.clone();
@@ -290,19 +308,53 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
         let content = tokio::fs::read_to_string(file_path)
             .await
             .unwrap_or_default();
+        session.diags.lock().unwrap().remove(file_path);
+        let version = {
+            let mut versions = session.versions.lock().unwrap();
+            let version = versions.entry(file_path.to_string()).or_insert(0);
+            *version += 1;
+            *version
+        };
         let language_id = svr.language_id;
         let mut owned = session.stdin.lock().unwrap().take();
         if let Some(ref mut stdin) = owned {
-            send_did_open(stdin, file_path, language_id, &content).await;
+            if version == 1 {
+                send_did_open(stdin, file_path, language_id, &content).await;
+            } else {
+                send_did_change(stdin, file_path, version, &content).await;
+            }
         }
         *session.stdin.lock().unwrap() = owned;
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        all_diags.extend(session.diags.lock().unwrap().clone());
+
+        let mut published = None;
+        for _ in 0..50 {
+            if let Some(diags) = session.diags.lock().unwrap().get(file_path).cloned() {
+                published = Some(diags);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        all_diags.extend(published.ok_or_else(|| {
+            format!(
+                "timed out waiting for {} diagnostics for {}",
+                sid, file_path
+            )
+        })?);
     }
     Ok(all_diags)
 }
 
-async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, ChildStdin), String> {
+async fn start_server(
+    svr: &server::LspServer,
+    root: &str,
+) -> Result<
+    (
+        Child,
+        ChildStdin,
+        Arc<Mutex<HashMap<String, Vec<Diagnostic>>>>,
+    ),
+    String,
+> {
     let bin_path = ensure_binary(svr.binary)?;
     let mut cmd = Command::new(&bin_path);
     cmd.args(svr.args);
@@ -323,7 +375,8 @@ async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, Chi
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
 
-    let diags_arc: Arc<Mutex<Vec<Diagnostic>>> = Arc::new(Mutex::new(Vec::new()));
+    let diags_arc: Arc<Mutex<HashMap<String, Vec<Diagnostic>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let diags = diags_arc.clone();
     tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
@@ -349,7 +402,7 @@ async fn start_server(svr: &server::LspServer, root: &str) -> Result<(Child, Chi
 
     send_initialize(&mut stdin).await?;
     tokio::time::sleep(Duration::from_secs(3)).await;
-    Ok((child, stdin))
+    Ok((child, stdin, diags_arc))
 }
 
 fn parse_jsonrpc(data: &[u8]) -> Option<(serde_json::Value, &[u8])> {
@@ -402,7 +455,10 @@ async fn send_initialize(stdin: &mut ChildStdin) -> Result<(), String> {
     Ok(())
 }
 
-async fn process_message(msg: &serde_json::Value, diags: &Arc<Mutex<Vec<Diagnostic>>>) {
+async fn process_message(
+    msg: &serde_json::Value,
+    diags: &Arc<Mutex<HashMap<String, Vec<Diagnostic>>>>,
+) {
     if let Some(params) = msg.get("params") {
         if let Some(uri) = params.get("uri").and_then(|v| v.as_str()) {
             if let Some(diagnostics) = params.get("diagnostics").and_then(|v| v.as_array()) {
@@ -434,7 +490,7 @@ async fn process_message(msg: &serde_json::Value, diags: &Arc<Mutex<Vec<Diagnost
                         });
                     }
                 }
-                diags.lock().unwrap().extend(collected);
+                diags.lock().unwrap().insert(path, collected);
             }
         }
     }
@@ -652,7 +708,9 @@ pub fn reconcile_lsp() -> (usize, usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::lsp_params;
+    use super::{lsp_params, process_message, Diagnostic};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn builds_method_specific_params_and_rejects_bad_requests() {
@@ -667,5 +725,38 @@ mod tests {
 
         assert!(lsp_params("/workspace/main.go", "textDocument/hover", &symbols).is_err());
         assert!(lsp_params("/workspace/main.go", "unknown", &serde_json::json!({})).is_err());
+    }
+
+    #[tokio::test]
+    async fn stores_latest_diagnostics_by_file_even_when_clean() {
+        let diags: Arc<Mutex<HashMap<String, Vec<Diagnostic>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        process_message(
+            &serde_json::json!({
+                "params": {
+                    "uri": "file:///workspace/main.go",
+                    "diagnostics": [{
+                        "range": { "start": { "line": 2, "character": 4 } },
+                        "severity": 1,
+                        "message": "broken"
+                    }]
+                }
+            }),
+            &diags,
+        )
+        .await;
+        assert_eq!(
+            diags.lock().unwrap()["/workspace/main.go"][0].message,
+            "broken"
+        );
+
+        process_message(
+            &serde_json::json!({
+                "params": { "uri": "file:///workspace/main.go", "diagnostics": [] }
+            }),
+            &diags,
+        )
+        .await;
+        assert!(diags.lock().unwrap()["/workspace/main.go"].is_empty());
     }
 }

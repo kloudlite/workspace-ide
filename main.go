@@ -33,7 +33,7 @@ func (m *Ws) buildImage() *dagger.Container {
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{
 			"apt-get", "install", "--no-install-recommends", "-y",
-			"ca-certificates", "curl",
+			"ca-certificates", "curl", "git",
 			"which", "unzip", "xz-utils", "bzip2",
 		}).
 		WithExec([]string{"sh", "-c", "useradd -u 1000 -m -d /home/karthik karthik && chown -R 1000:1000 /home/karthik"}).
