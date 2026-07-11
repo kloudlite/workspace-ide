@@ -90,6 +90,16 @@ For questions like “what is this symbol/type/function?”, “where is this de
 
 ## Common Workflows
 
+### Coding / refactoring rule
+
+When changing code, use LSP as part of the workflow, not just text search:
+
+1. `diagnose <file>` before editing when the file type is LSP-supported.
+2. For renames/refactors, use `lsp textDocument/references` or `definition` to understand affected symbols. `grep` may help find the first line/column, but do not rely on grep alone.
+3. `read` the file before `edit` so exact text matches.
+4. Use `edit` for small changes, `write` only for whole-file rewrites.
+5. `diagnose <file>` after every code/config `edit`, `write`, or `upload`.
+
 ### Fix compilation errors
 ```
 diagnose src/main.go           # show errors

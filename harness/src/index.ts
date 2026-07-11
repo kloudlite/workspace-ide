@@ -61,7 +61,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "edit",
       label: "Edit",
-      description: "Edit a file on the remote workspace by replacing exact text",
+      description: "Edit a file on the remote workspace by replacing exact text. After editing code/config, run diagnose on the changed file.",
       parameters: Type.Object({
         path: Type.String({ description: "File path" }),
         oldText: Type.String({ description: "Exact text to replace" }),
@@ -70,7 +70,7 @@ export function createWsTools(config: WsConfig) {
       execute: async (_id, params: { path: string; oldText: string; newText: string }, signal) => {
         await postJson(`${base}/edit`, {
           path: params.path,
-          edits: [{ oldText: params.oldText, newText: params.newText }],
+          edits: [{ old_text: params.oldText, new_text: params.newText }],
         }, signal);
         return { content: [{ type: "text", text: "ok" }], details: {} };
       },
@@ -78,7 +78,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "write",
       label: "Write",
-      description: "Write content to a file on the remote workspace (creates parent dirs)",
+      description: "Write content to a file on the remote workspace (creates parent dirs). After writing code/config, run diagnose on the changed file.",
       parameters: Type.Object({
         path: Type.String({ description: "File path" }),
         content: Type.String({ description: "Content to write" }),
