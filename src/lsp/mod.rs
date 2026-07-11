@@ -9,6 +9,7 @@ use std::time::Duration;
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, ChildStdin, Command};
+use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 // ponytail: which() + nix fallback, no custom download
 fn ensure_binary(binary: &str) -> Result<String, String> {
@@ -47,7 +48,8 @@ struct Session {
     server_id: String,
     root: String,
     _process: Arc<Mutex<Option<Child>>>,
-    stdin: Arc<Mutex<Option<ChildStdin>>>,
+    stdin: Arc<AsyncMutex<ChildStdin>>,
+    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
     diags: Arc<Mutex<HashMap<String, Vec<Diagnostic>>>>,
     versions: Arc<Mutex<HashMap<String, i32>>>,
     last_active: Instant,
@@ -113,9 +115,59 @@ async fn send_did_change(stdin: &mut ChildStdin, path: &str, version: i32, conte
     .await;
 }
 
-/// Send a JSON-RPC request to an LSP server and wait for the response.
-/// Fresh process per request (no session caching). Uses blocking I/O to match Python-test behavior.
 static NEXT_REQ_ID: AtomicU64 = AtomicU64::new(2);
+
+async fn get_session(svr: &server::LspServer, file_path: &str) -> Result<Session, String> {
+    let sid = svr.id.to_string();
+    let root = find_root(file_path, svr.root_mode);
+    if let Some(session) = state()
+        .lock()
+        .unwrap()
+        .sessions
+        .iter_mut()
+        .find(|session| session.server_id == sid && session.root == root)
+    {
+        session.last_active = Instant::now();
+        return Ok(session.clone());
+    }
+
+    let (child, stdin, pending, diags) = start_server(svr, &root).await?;
+    let session = Session {
+        server_id: sid,
+        root,
+        _process: Arc::new(Mutex::new(Some(child))),
+        stdin: Arc::new(AsyncMutex::new(stdin)),
+        pending,
+        diags,
+        versions: Arc::new(Mutex::new(HashMap::new())),
+        last_active: Instant::now(),
+    };
+    state().lock().unwrap().sessions.push(session.clone());
+    Ok(session)
+}
+
+async fn sync_document(
+    session: &Session,
+    svr: &server::LspServer,
+    file_path: &str,
+) -> Result<(), String> {
+    let content = tokio::fs::read_to_string(file_path)
+        .await
+        .map_err(|e| format!("read {}: {}", file_path, e))?;
+    let version = {
+        let mut versions = session.versions.lock().unwrap();
+        let version = versions.entry(file_path.to_string()).or_insert(0);
+        *version += 1;
+        *version
+    };
+    let mut stdin = session.stdin.lock().await;
+    if version == 1 {
+        send_did_open(&mut stdin, file_path, svr.language_id, &content).await;
+    } else {
+        send_did_change(&mut stdin, file_path, version, &content).await;
+    }
+    Ok(())
+}
 
 pub async fn lsp_request(
     file_path: &str,
@@ -123,138 +175,33 @@ pub async fn lsp_request(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let ext = extension_for(file_path);
-    let servers = server::for_extension(&ext);
-    if servers.is_empty() {
-        return Err(format!("no LSP server for {}", ext));
-    }
-    let svr = servers.into_iter().next().unwrap().clone();
-    let _ = ensure_binary(svr.binary);
-    for pkg in svr.nix_packages {
-        let _ = crate::nix::install_auto(pkg);
-    }
-    let bin_path = ensure_binary(svr.binary)?;
-    let root = find_root(file_path, svr.root_mode);
-    let language_id = svr.language_id;
-    let content = tokio::fs::read_to_string(file_path)
-        .await
-        .unwrap_or_default();
+    let svr = server::for_extension(&ext)
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("no LSP server for {}", ext))?;
+    let session = get_session(svr, file_path).await?;
+    sync_document(&session, svr, file_path).await?;
+
     let id = NEXT_REQ_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let (tx, rx) = oneshot::channel();
+    session.pending.lock().unwrap().insert(id, tx);
+    {
+        let mut stdin = session.stdin.lock().await;
+        write_msg(
+            &mut stdin,
+            &serde_json::json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }),
+        )
+        .await;
+    }
 
-    let f_path = file_path.to_string();
-    let method = method.to_string();
-    let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-    // Use std::process::Command (blocking) to avoid tokio pipe bugs
-    tokio::task::spawn_blocking(move || {
-        let mut child = match std::process::Command::new(&bin_path)
-            .args(svr.args)
-            .current_dir(&root)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(e) => return Err(format!("spawn: {}", e)),
-        };
-        let mut stdin = match child.stdin.take() {
-            Some(s) => s,
-            None => return Err("no stdin".to_string()),
-        };
-        let stdout = match child.stdout.take() {
-            Some(s) => s,
-            None => return Err("no stdout".to_string()),
-        };
-
-        use std::io::{Write, Read};
-        let mut w = |msg: &serde_json::Value| {
-            let body = serde_json::to_string(msg).unwrap();
-            let header = format!("Content-Length: {}\r\n\r\n", body.len());
-            stdin.write_all(header.as_bytes()).ok();
-            stdin.write_all(body.as_bytes()).ok();
-            stdin.flush().ok();
-        };
-
-        // Initialize
-        w(&serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"capabilities":{}}}));
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        w(&serde_json::json!({"jsonrpc":"2.0","method":"initialized","params":{}}));
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // didOpen
-        w(&serde_json::json!({
-            "jsonrpc":"2.0","method":"textDocument/didOpen",
-            "params":{"textDocument":{"uri":format!("file://{}",f_path),"languageId":language_id,"version":1,"text":content}}
-        }));
-
-        // Parse params from JSON string, then build request
-        let params_val: serde_json::Value = serde_json::from_str(&params_json).unwrap_or(serde_json::Value::Null);
-        w(&serde_json::json!({
-            "jsonrpc":"2.0","id":id,"method":method,"params":params_val
-        }));
-
-        // Keep stdin open. Read one message at a time from stdout.
-        // This gives gopls time to process each request and produce output.
-        // ponytail: no background threads, no oneshot channels. One-byte-at-a-time is
-        // inefficient for large messages but fine for LSP (hover/def/completion are small).
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
-
-        /// Read one JSON-RPC message (header + body) from a BufRead.
-        fn read_next<R: Read>(r: &mut std::io::BufReader<R>) -> Option<serde_json::Value> {
-            let mut header = Vec::new();
-            let mut cr = 0;
-            loop {
-                let mut byte = [0u8; 1];
-                r.read_exact(&mut byte).ok()?;
-                match (cr, byte[0]) {
-                    (0, b'\r') => cr = 1,
-                    (1, b'\n') => cr = 2,
-                    (2, b'\r') => cr = 3,
-                    (3, b'\n') => {
-                        if let Ok(s) = std::str::from_utf8(&header[..header.len() - 2]) {
-                            for line in s.lines() {
-                                if let Some(len_str) = line.strip_prefix("Content-Length: ") {
-                                    if let Ok(len) = len_str.trim().parse::<usize>() {
-                                        let mut body = vec![0u8; len];
-                                        r.read_exact(&mut body).ok()?;
-                                        return serde_json::from_slice(&body).ok();
-                                    }
-                                }
-                            }
-                        }
-                        return None;
-                    }
-                    _ => { cr = 0; }
-                }
-                header.push(byte[0]);
-            }
+    match tokio::time::timeout(Duration::from_secs(300), rx).await {
+        Ok(Ok(response)) => Ok(response),
+        Ok(Err(_)) => Err("LSP response channel closed".to_string()),
+        Err(_) => {
+            session.pending.lock().unwrap().remove(&id);
+            Err(format!("timed out waiting for {}", method))
         }
-
-        let mut reader = std::io::BufReader::new(stdout);
-
-        // Read initialize response
-        let _init_resp = read_next(&mut reader).ok_or("no init response")?;
-
-        // Read messages until we find our response
-        loop {
-            if std::time::Instant::now() >= deadline {
-                break;
-            }
-            match read_next(&mut reader) {
-                Some(msg) => {
-                    if msg.get("id").and_then(|v| v.as_u64()) == Some(id) {
-                        let _ = child.kill();
-                        return Ok(msg);
-                    }
-                }
-                None => break,
-            }
-        }
-        let _ = child.kill();
-        Err("response not found".to_string())
-    })
-    .await
-    .map_err(|_| "join error".to_string())?
+    }
 }
 
 // --- Existing functions (diagnose, server lifecycle) ---
@@ -269,62 +216,9 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
     let mut all_diags = Vec::new();
     for svr in servers {
         let sid = svr.id.to_string();
-        let _ = ensure_binary(svr.binary);
-        let root = find_root(file_path, svr.root_mode);
-
-        let session = {
-            let mut s = state().lock().unwrap();
-            if let Some(existing) = s
-                .sessions
-                .iter_mut()
-                .find(|sess| sess.server_id == sid && sess.root == root)
-            {
-                existing.last_active = Instant::now();
-                Some(existing.clone())
-            } else {
-                None
-            }
-        };
-
-        let session = match session {
-            Some(s) => s,
-            None => {
-                let (child, stdin, diags) = start_server(svr, &root).await?;
-                let session = Session {
-                    server_id: sid.clone(),
-                    root: root.clone(),
-                    _process: Arc::new(Mutex::new(Some(child))),
-                    stdin: Arc::new(Mutex::new(Some(stdin))),
-                    diags,
-                    versions: Arc::new(Mutex::new(HashMap::new())),
-                    last_active: Instant::now(),
-                };
-                let cloned = session.clone();
-                state().lock().unwrap().sessions.push(session);
-                cloned
-            }
-        };
-
-        let content = tokio::fs::read_to_string(file_path)
-            .await
-            .unwrap_or_default();
+        let session = get_session(svr, file_path).await?;
         session.diags.lock().unwrap().remove(file_path);
-        let version = {
-            let mut versions = session.versions.lock().unwrap();
-            let version = versions.entry(file_path.to_string()).or_insert(0);
-            *version += 1;
-            *version
-        };
-        let language_id = svr.language_id;
-        let mut owned = session.stdin.lock().unwrap().take();
-        if let Some(ref mut stdin) = owned {
-            if version == 1 {
-                send_did_open(stdin, file_path, language_id, &content).await;
-            } else {
-                send_did_change(stdin, file_path, version, &content).await;
-            }
-        }
-        *session.stdin.lock().unwrap() = owned;
+        sync_document(&session, svr, file_path).await?;
 
         let mut published = None;
         for _ in 0..600 {
@@ -351,6 +245,7 @@ async fn start_server(
     (
         Child,
         ChildStdin,
+        Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
         Arc<Mutex<HashMap<String, Vec<Diagnostic>>>>,
     ),
     String,
@@ -407,6 +302,9 @@ async fn start_server(
     )
     .await;
 
+    let pending_arc: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let pending = pending_arc.clone();
     let diags_arc: Arc<Mutex<HashMap<String, Vec<Diagnostic>>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let diags = diags_arc.clone();
@@ -417,6 +315,10 @@ async fn start_server(
             while let Some((msg, rest)) = parse_jsonrpc(&data) {
                 if msg.get("method").and_then(|v| v.as_str()).is_some() {
                     process_message(&msg, &diags).await;
+                } else if let Some(id) = msg.get("id").and_then(|v| v.as_u64()) {
+                    if let Some(tx) = pending.lock().unwrap().remove(&id) {
+                        let _ = tx.send(msg);
+                    }
                 }
                 data = rest.to_vec();
             }
@@ -427,7 +329,7 @@ async fn start_server(
         }
     });
 
-    Ok((child, stdin, diags_arc))
+    Ok((child, stdin, pending_arc, diags_arc))
 }
 
 fn parse_jsonrpc(data: &[u8]) -> Option<(serde_json::Value, &[u8])> {
