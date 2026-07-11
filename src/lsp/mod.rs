@@ -68,6 +68,17 @@ fn state() -> &'static Mutex<LspState> {
     })
 }
 
+fn absolute_path(path: &str) -> std::path::PathBuf {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| Path::new(".").to_path_buf())
+            .join(path)
+    }
+}
+
 pub(crate) fn extension_for(path: &str) -> String {
     let ext = match Path::new(path).extension() {
         Some(e) => format!(".{}", e.to_string_lossy()),
@@ -174,13 +185,14 @@ pub async fn lsp_request(
     method: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let ext = extension_for(file_path);
+    let file_path = absolute_path(file_path).to_string_lossy().to_string();
+    let ext = extension_for(&file_path);
     let svr = server::for_extension(&ext)
         .into_iter()
         .next()
         .ok_or_else(|| format!("no LSP server for {}", ext))?;
-    let session = get_session(svr, file_path).await?;
-    sync_document(&session, svr, file_path).await?;
+    let session = get_session(svr, &file_path).await?;
+    sync_document(&session, svr, &file_path).await?;
 
     let id = NEXT_REQ_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let (tx, rx) = oneshot::channel();
@@ -207,7 +219,8 @@ pub async fn lsp_request(
 // --- Existing functions (diagnose, server lifecycle) ---
 
 pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
-    let ext = extension_for(file_path);
+    let file_path = absolute_path(file_path).to_string_lossy().to_string();
+    let ext = extension_for(&file_path);
     let servers = server::for_extension(&ext);
     if servers.is_empty() {
         return Ok(vec![]);
@@ -216,13 +229,13 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
     let mut all_diags = Vec::new();
     for svr in servers {
         let sid = svr.id.to_string();
-        let session = get_session(svr, file_path).await?;
-        session.diags.lock().unwrap().remove(file_path);
-        sync_document(&session, svr, file_path).await?;
+        let session = get_session(svr, &file_path).await?;
+        session.diags.lock().unwrap().remove(&file_path);
+        sync_document(&session, svr, &file_path).await?;
 
         let mut published = None;
         for _ in 0..600 {
-            if let Some(diags) = session.diags.lock().unwrap().get(file_path).cloned() {
+            if let Some(diags) = session.diags.lock().unwrap().get(&file_path).cloned() {
                 published = Some(diags);
                 break;
             }
@@ -266,7 +279,7 @@ async fn start_server(
 
     let mut child = cmd
         .spawn()
-        .map_err(|e| format!("spawn {}: {}", svr.id, e))?;
+        .map_err(|e| format!("spawn {} ({}) in {}: {}", svr.id, bin_path, root, e))?;
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
     let mut reader = tokio::io::BufReader::new(stdout);
@@ -419,8 +432,8 @@ fn find_root(file_path: &str, root_mode: server::RootMode) -> String {
         return workspace.to_string_lossy().to_string();
     }
 
-    let path = Path::new(file_path);
-    let dir = path.parent().unwrap_or(Path::new("."));
+    let path = absolute_path(file_path);
+    let dir = path.parent().unwrap_or(&workspace);
     let markers = [
         "package.json",
         "package-lock.json",
@@ -458,7 +471,7 @@ pub fn lsp_params(
     method: &str,
     req: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let uri = format!("file://{}", path);
+    let uri = format!("file://{}", absolute_path(path).to_string_lossy());
     let position = || -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "line": req.get("line").and_then(|v| v.as_u64()).ok_or("missing field: line")?,
@@ -622,7 +635,7 @@ pub fn reconcile_lsp() -> (usize, usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::{lsp_params, process_message, Diagnostic};
+    use super::{find_root, lsp_params, process_message, server::RootMode, Diagnostic};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
@@ -639,6 +652,18 @@ mod tests {
 
         assert!(lsp_params("/workspace/main.go", "textDocument/hover", &symbols).is_err());
         assert!(lsp_params("/workspace/main.go", "unknown", &serde_json::json!({})).is_err());
+
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(
+            find_root("src/main.rs", RootMode::ProjectOrDir),
+            cwd.to_string_lossy()
+        );
+        let relative = serde_json::json!({ "line": 0, "column": 0 });
+        let params = lsp_params("src/main.rs", "textDocument/hover", &relative).unwrap();
+        assert_eq!(
+            params["textDocument"]["uri"],
+            format!("file://{}/src/main.rs", cwd.display())
+        );
     }
 
     #[tokio::test]
