@@ -24,6 +24,12 @@ function rangedText(content: string, offset = 1, limit = 400) {
   return { text: selected.join("\n") + suffix, lines: selected.length, totalLines: lines.length, truncated };
 }
 
+function boundedOutput(text: string, limit = 50_000): string {
+  if (text.length <= limit) return text;
+  const half = Math.floor(limit / 2);
+  return `${text.slice(0, half)}\n[truncated ${text.length - limit} characters]\n${text.slice(-half)}`;
+}
+
 function compactLspResult(result: any): any {
   if (Array.isArray(result) && result.length > 200) {
     return { items: result.slice(0, 200), truncated: true, total: result.length, message: "Narrow the query before acting." };
@@ -88,9 +94,12 @@ export function createWsTools(config: WsConfig) {
       }),
       execute: async (_id, params: { command: string }, signal) => {
         const r: any = await postJson(`${base}/bash`, { command: params.command }, signal);
+        const stdout = boundedOutput(r.stdout || "");
+        const stderr = boundedOutput(r.stderr || "");
+        const text = stdout && stderr ? `[stdout]\n${stdout}\n[stderr]\n${stderr}` : stdout || stderr;
         return {
-          content: [{ type: "text", text: r.stdout || r.stderr }],
-          details: { exitCode: r.exit_code, stdout: r.stdout, stderr: r.stderr },
+          content: [{ type: "text", text }],
+          details: { exitCode: r.exit_code, truncated: stdout !== (r.stdout || "") || stderr !== (r.stderr || "") },
         };
       },
     }),
@@ -149,7 +158,7 @@ export function createWsTools(config: WsConfig) {
     defineTool({
       name: "grep",
       label: "Grep",
-      description: "Search file text on the remote workspace. Do NOT use for definition/references when LSP supports the file; use lsp first for code intelligence.",
+      description: "Search file text using POSIX basic regex in one directory path. Do not pass space-separated paths; use a common ancestor or separate calls. Use LSP for semantic references.",
       parameters: Type.Object({
         pattern: Type.String({ description: "Search pattern" }),
         path: Type.Optional(Type.String({ description: "Directory to search (default: cwd)" })),

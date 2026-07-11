@@ -127,7 +127,7 @@ LSP rename, code-action, and formatting responses are previews; file mutation re
 | `write` | New file or intentional whole-file replacement |
 | `upload` | Local binary/image to remote workspace |
 | `ls` / `find` | Discover paths/files |
-| `grep` | Literal/text search, or locating a symbol position when symbol search fails |
+| `grep` | POSIX basic-regex text search in one directory, or locating a symbol when semantic search fails; never pass space-separated paths |
 
 `edit` exact text is case/whitespace-sensitive. `write` overwrites the entire file.
 
@@ -168,7 +168,7 @@ Avoid dumping entire repositories, generated files, lockfiles, dependency trees,
 
 ### Audit/review budget
 
-For whole-repository audits, breadth comes from bounded inventory/search—not reading every file. Rank candidates, inspect at most 20 strongest files with ranged `read`, require concrete evidence per finding, return at most 10 highest-impact findings, and stop. Do not repeat equivalent grep/bash searches or read whole large files when a matching range is enough.
+For whole-repository audits, scope “the codebase” to tracked source/config (`git ls-files`) by default. Ignored/generated/build/untracked workspace artifacts are not codebase findings or line-reduction credit unless cleanup is explicitly requested. Breadth comes from bounded inventory/search—not reading every file. Rank candidates, inspect at most 20 strongest files with ranged `read`, require concrete evidence per finding, return at most 10 highest-impact findings, and stop. Do not retry a harness grep with bash because of a malformed multi-path argument; use one common ancestor or separate bounded calls. Do not repeat equivalent searches or read whole large files when a matching range is enough.
 
 ## Verification ladder
 

@@ -91,7 +91,8 @@ Every other path is remote and relative paths resolve under `/workspace`.
 Tool output is intentionally bounded:
 
 - `read`: `ws-pi` defaults to 400 lines and returns a continuation offset; explicit `offset`/`limit` select a 1-indexed line range;
-- `grep`: at most 200 matches and 500 characters per matching line;
+- `grep`: POSIX basic regex in one directory, at most 200 matches and 500 characters per matching line;
+- `bash`: model-visible stdout/stderr is capped at 50,000 characters with head and tail preserved;
 - `find`: at most 200 files;
 - oversized LSP arrays: first 200 items with explicit truncation metadata;
 - unsafe LSP results over 1 MB are refused with instructions to narrow the request.
@@ -169,7 +170,7 @@ The bundled [`ws-harness` skill](harness/skills/ws-harness/SKILL.md) teaches pi 
 - preserve command failures instead of masking them with `|| true`;
 - stop after focused verification passes;
 - distinguish tracked from untracked files when reviewing changes;
-- keep repo-wide audits bounded: inventory/search for breadth, inspect at most 20 strongest files with ranged reads, and report at most 10 evidence-backed findings.
+- keep repo-wide audits bounded: audit tracked source/config by default, inventory/search for breadth, inspect at most 20 strongest files with ranged reads, and report at most 10 evidence-backed findings. Ignored/generated/untracked workspace artifacts are excluded unless cleanup is requested.
 
 Recommended loop:
 
