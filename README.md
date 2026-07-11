@@ -190,6 +190,8 @@ The minimum-sufficient implementation rules are adapted from [Ponytail](https://
 
 Press Escape to abort an inflight tool request. Finite shell commands are killed on client disconnect; `spawn` sessions remain managed explicitly through `status`, `logs`, and `kill`.
 
+Pi skill commands work normally: `/skill:name [arguments]` is treated as an explicit invocation and executes immediately against the remote workspace. `ws-pi` must not merely acknowledge that a skill was loaded or ask for a second command.
+
 ## Shell and packages
 
 `bash` waits until the command exits. Use it for tests, builds, formatting, and finite repository commands. Use `spawn` for servers, watchers, and daemons.

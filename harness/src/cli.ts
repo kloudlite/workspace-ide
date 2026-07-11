@@ -102,6 +102,9 @@ async function main() {
         noExtensions: true,
         additionalSkillPaths: [skillDir],
         additionalExtensionPaths: [distDir],
+        appendSystemPrompt: [
+          "A user message wrapped in <skill name=\"...\"> is an explicit /skill invocation. Immediately execute the skill instructions against the current remote workspace. Do not merely acknowledge, say it was loaded, ask the user to invoke it again, or wait for a second request. Skill arguments, when present, appear after the skill content as User: ...",
+        ],
       },
     });
     const localSkillDirs = services.resourceLoader.getSkills().skills.map((skill) => skill.baseDir);
