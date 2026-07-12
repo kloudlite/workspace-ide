@@ -18,7 +18,18 @@ docker run -d --name ws --restart unless-stopped \
   ghcr.io/kloudlite/workspace-ide:latest serve
 ```
 
-Open inbound TCP `18765` in your host/provider firewall. The image is intentionally small: missing language servers install into the mounted profile when `ws` starts.
+Open inbound TCP `18765` in your host/provider firewall, preferably only from your own IP. For Azure NSGs:
+
+```bash
+az network nsg rule create \
+  --resource-group <resource-group> --nsg-name <nsg> \
+  --name AllowWS18765 --priority 1041 \
+  --direction Inbound --access Allow --protocol Tcp \
+  --source-address-prefixes <your-public-ip>/32 \
+  --destination-port-ranges 18765
+```
+
+The image is intentionally small: missing language servers install into the mounted profile when `ws` starts.
 
 ### 2. Install `ws-pi` once
 
