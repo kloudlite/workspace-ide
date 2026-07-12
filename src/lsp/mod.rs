@@ -91,6 +91,14 @@ pub(crate) fn extension_for(path: &str) -> String {
     }
 }
 
+fn language_id<'a>(path: &str, default: &'a str) -> &'a str {
+    match extension_for(path).as_str() {
+        ".tsx" => "typescriptreact",
+        ".jsx" => "javascriptreact",
+        _ => default,
+    }
+}
+
 /// Open a file in the LSP session (textDocument/didOpen).
 async fn send_did_open(stdin: &mut ChildStdin, path: &str, language_id: &str, content: &str) {
     write_msg(
@@ -173,7 +181,13 @@ async fn sync_document(
     };
     let mut stdin = session.stdin.lock().await;
     if version == 1 {
-        send_did_open(&mut stdin, file_path, svr.language_id, &content).await;
+        send_did_open(
+            &mut stdin,
+            file_path,
+            language_id(file_path, svr.language_id),
+            &content,
+        )
+        .await;
     } else {
         send_did_change(&mut stdin, file_path, version, &content).await;
     }
@@ -640,7 +654,9 @@ pub fn reconcile_lsp() -> (usize, usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::{find_root, lsp_params, process_message, server::RootMode, Diagnostic};
+    use super::{
+        find_root, language_id, lsp_params, process_message, server::RootMode, Diagnostic,
+    };
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
@@ -669,6 +685,15 @@ mod tests {
             params["textDocument"]["uri"],
             format!("file://{}/src/main.rs", cwd.display())
         );
+        assert_eq!(
+            language_id("component.tsx", "typescript"),
+            "typescriptreact"
+        );
+        assert_eq!(
+            language_id("component.jsx", "typescript"),
+            "javascriptreact"
+        );
+        assert_eq!(language_id("component.ts", "typescript"), "typescript");
     }
 
     #[tokio::test]
