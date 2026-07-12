@@ -183,8 +183,8 @@ function collapsedToolResult(name: string, args: any, result: any, text: string)
 
 function renderedTools(tools: any[]) {
   return tools.map((tool) => {
-    // Pi's built-in read renderer only formats the result; unlike edit, it never reads cwd.
-    if (tool.name === "read") return tool;
+    // These built-in renderers format results only; edit is the exception because it reads cwd.
+    if (["read", "bash"].includes(tool.name)) return tool;
     return {
       ...tool,
       renderCall: (args: any) => textComponent(toolCallSummary(tool.name, args)),
