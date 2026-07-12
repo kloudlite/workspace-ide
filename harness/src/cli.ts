@@ -53,7 +53,8 @@ if (!serverUrl) serverUrl = "http://localhost:8321";
 
 // ponytail: hash server URL into a safe dir name — different connections get isolated sessions
 const sessionDir = join(homedir(), ".ws-sessions", createHash("sha256").update(serverUrl).digest("hex").slice(0, 12));
-const workspaceCwd = "/workspace";
+// Pi requires an existing local cwd for sessions and TUI links. Remote tools use /workspace server-side.
+const localCwd = process.cwd();
 
 async function main() {
   // ponytail: extension reads WS_SERVER_URL from env
@@ -76,12 +77,12 @@ async function main() {
   // Default: continue most recent session. --new forces fresh. --session opens a specific one.
   let sm: SessionManager;
   if (sessionFile) {
-    sm = SessionManager.open(sessionFile, sessionDir, workspaceCwd);
+    sm = SessionManager.open(sessionFile, sessionDir, localCwd);
   } else if (newSession) {
-    sm = SessionManager.create(workspaceCwd, sessionDir);
+    sm = SessionManager.create(localCwd, sessionDir);
   } else {
     const [recent] = await SessionManager.listAll(sessionDir);
-    sm = recent ? SessionManager.open(recent.path, sessionDir, workspaceCwd) : SessionManager.create(workspaceCwd, sessionDir);
+    sm = recent ? SessionManager.open(recent.path, sessionDir, localCwd) : SessionManager.create(localCwd, sessionDir);
   }
 
   // Let user know which session is active
@@ -125,7 +126,7 @@ async function main() {
   };
 
   const runtime = await createAgentSessionRuntime(createRuntime, {
-    cwd: workspaceCwd,
+    cwd: localCwd,
     agentDir: getAgentDir(),
     sessionManager: sm,
   });
