@@ -85,8 +85,12 @@ function renderEdits(result: any): string[] {
 }
 
 function formatLspResult(method: string, raw: any): string {
+  if (typeof raw === "string") {
+    try { raw = JSON.parse(raw); } catch { /* LSP hover text is not JSON. */ }
+  }
   const result = compactLspResult(raw);
-  if (result == null) return "(none)";
+  const empty = method === "textDocument/references" ? "(no references)" : method === "textDocument/documentSymbol" ? "(no symbols)" : "(no results)";
+  if (result == null) return empty;
   const array = Array.isArray(result) ? result : Array.isArray(result.items) ? result.items : null;
   const footer = result?.truncated ? `\n[truncated: ${array?.length || 0} of ${result.total || "many"}; narrow the query]` : "";
   if (result?.truncated && !array && result.message) return `[truncated ${result.size || "large"}-character result] ${result.message}`;
@@ -98,10 +102,10 @@ function formatLspResult(method: string, raw: any): string {
       const line = `${"  ".repeat(depth)}${item.name} [${symbolKinds[item.kind] || `kind-${item.kind}`}]${location ? ` — ${location}` : ""}`;
       return [line, ...walk(item.children || [], depth + 1)];
     });
-    return (walk(array || []).join("\n") || "(none)") + footer;
+    return (walk(array || []).join("\n") || empty) + footer;
   }
   if (["textDocument/definition", "textDocument/typeDefinition", "textDocument/implementation", "textDocument/references"].includes(method)) {
-    return ((array || [result]).map(lspLocation).filter(Boolean).join("\n") || "(none)") + footer;
+    return ((array || [result]).map(lspLocation).filter(Boolean).join("\n") || empty) + footer;
   }
   if (method === "textDocument/hover") {
     const contents = result.contents;
@@ -130,7 +134,7 @@ function formatLspResult(method: string, raw: any): string {
     const range = result.range || result;
     return `${result.placeholder || "renameable"} — ${range.start.line + 1}:${range.start.character + 1}-${range.end.line + 1}:${range.end.character + 1}`;
   }
-  return JSON.stringify(result, null, 2);
+  return typeof result === "string" ? result : JSON.stringify(result, null, 2);
 }
 
 function textComponent(text: string) {
