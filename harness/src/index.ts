@@ -195,7 +195,9 @@ function renderedTools(tools: any[]) {
       ...tool,
       renderCall: (args: any, theme: any) => textComponent(toolCallSummary(tool.name, args, theme)),
       renderResult: (result: any, options: any, theme: any, context: any) => {
-        const text = options.expanded || context.isError ? toolResultText(result) : collapsedToolResult(tool.name, context.args, result, toolResultText(result));
+        const raw = toolResultText(result);
+        const formatted = tool.name === "lsp" ? formatLspResult(context.args.method, raw) : raw;
+        const text = options.expanded || context.isError ? formatted : collapsedToolResult(tool.name, context.args, result, formatted);
         return textComponent(theme.fg(context.isError ? "error" : "toolOutput", text));
       },
     };
