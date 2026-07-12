@@ -164,9 +164,17 @@ function renderedTools(tools: any[]) {
   return tools.map((tool) => ({
     ...tool,
     renderCall: (args: any) => textComponent(toolCallSummary(tool.name, args)),
-    renderResult: (result: any) => textComponent(
-      (result.content || []).map((item: any) => item.type === "text" ? item.text : `[${item.type}]`).join("\n") || "(no output)",
-    ),
+    renderResult: (result: any, options: any, _theme: any, context: any) => {
+      if (tool.name === "read" && !options.expanded) {
+        const details = result.details || {};
+        const lines = details.lines || 0;
+        const total = details.totalLines || details.total_lines || lines;
+        return textComponent(`read ${context.args.path} — ${lines} of ${total} lines${details.truncated ? " (truncated)" : ""} [expand to view]`);
+      }
+      return textComponent(
+        (result.content || []).map((item: any) => item.type === "text" ? item.text : `[${item.type}]`).join("\n") || "(no output)",
+      );
+    },
   }));
 }
 
