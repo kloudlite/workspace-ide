@@ -50,8 +50,10 @@ for (let i = 0; i < args.length; i++) {
 }
 
 if (!serverUrl) serverUrl = "http://kmac.khost.dev:18765";
+if (!serverUrl.includes("://")) serverUrl = `http://${serverUrl}${serverUrl.includes(":") ? "" : ":18765"}`;
+const serverLabel = serverUrl.replace(/^https?:\/\//, "").replace(/:18765$/, "");
 
-// ponytail: hash server URL into a safe dir name — different connections get isolated sessions
+// ponytail: hash normalized server URL into a safe dir name — different connections get isolated sessions
 const sessionDir = join(homedir(), ".ws-sessions", createHash("sha256").update(serverUrl).digest("hex").slice(0, 12));
 // Pi requires an existing local cwd for sessions and TUI links. Remote tools use /workspace server-side.
 const localCwd = process.cwd();
@@ -153,12 +155,12 @@ async function main() {
     process.stdout.write = ((chunk: any, ...rest: any[]) => {
       if (String(chunk).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").startsWith("To resume this session:")) {
         wroteResume = true;
-        return resumable ? write("To continue: ws-pi\n") : true;
+        return resumable ? write(`To continue: ws-pi --server ${serverLabel}\n`) : true;
       }
       return write(chunk, ...rest);
     }) as typeof process.stdout.write;
     process.once("exit", () => {
-      if (resumable && !wroteResume) write("To continue: ws-pi\n");
+      if (resumable && !wroteResume) write(`To continue: ws-pi --server ${serverLabel}\n`);
     });
     const mode = new InteractiveMode(runtime);
     showRemoteWorkspace(mode);
