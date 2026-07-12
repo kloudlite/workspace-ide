@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import { defineTool, keyHint } from "@earendil-works/pi-coding-agent";
+import { defineTool, keyHint, truncateToVisualLines } from "@earendil-works/pi-coding-agent";
 import { readFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join, resolve, sep } from "path";
@@ -138,7 +138,8 @@ function formatLspResult(method: string, raw: any): string {
 }
 
 function textComponent(text: string) {
-  return { render: () => text.split("\n"), invalidate: () => {} };
+  // ponytail: Pi's Text renderer handles ANSI escape sequences and terminal wrapping.
+  return { render: (width: number) => truncateToVisualLines(text, Number.MAX_SAFE_INTEGER, width).visualLines, invalidate: () => {} };
 }
 
 function toolCallSummary(name: string, args: any, theme?: any): string {
