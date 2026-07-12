@@ -160,20 +160,38 @@ function toolCallSummary(name: string, args: any): string {
   }
 }
 
+function toolResultText(result: any): string {
+  return (result.content || []).map((item: any) => item.type === "text" ? item.text : `[${item.type}]`).join("\n") || "(no output)";
+}
+
+function collapsedToolResult(name: string, args: any, result: any, text: string): string {
+  const details = result.details || {};
+  if (name === "read") {
+    const lines = details.lines || text.split("\n").filter((line: string) => !line.startsWith("[lines ")).length;
+    const total = details.totalLines || details.total_lines || lines;
+    return `read ${args.path} — ${lines} of ${total} lines${details.truncated ? " (truncated)" : ""} [expand to view]`;
+  }
+  if (text === "(no diagnostics)" || text === "(no output)") return text;
+
+  const lines = text.split("\n");
+  const limit = name === "grep" ? 15 : ["find", "ls", "sessions", "lsp_servers", "lsp_sessions", "pkg_search", "pkg_list"].includes(name) ? 20 : 10;
+  if (lines.length <= limit && text.length <= 800) return text;
+
+  const tail = name === "bash" || name === "logs";
+  const preview = tail ? lines.slice(-limit) : lines.slice(0, limit);
+  const omitted = lines.length - preview.length;
+  const position = tail ? "earlier" : "more";
+  const truncated = details.truncated || text.includes("[truncated");
+  return `${preview.join("\n")}\n… (${omitted} ${position} lines${truncated ? ", output truncated" : ""}; expand to view)`;
+}
+
 function renderedTools(tools: any[]) {
   return tools.map((tool) => ({
     ...tool,
     renderCall: (args: any) => textComponent(toolCallSummary(tool.name, args)),
     renderResult: (result: any, options: any, _theme: any, context: any) => {
-      if (tool.name === "read" && !options.expanded) {
-        const details = result.details || {};
-        const lines = details.lines || 0;
-        const total = details.totalLines || details.total_lines || lines;
-        return textComponent(`read ${context.args.path} — ${lines} of ${total} lines${details.truncated ? " (truncated)" : ""} [expand to view]`);
-      }
-      return textComponent(
-        (result.content || []).map((item: any) => item.type === "text" ? item.text : `[${item.type}]`).join("\n") || "(no output)",
-      );
+      const text = toolResultText(result);
+      return textComponent(options.expanded || context.isError ? text : collapsedToolResult(tool.name, context.args, result, text));
     },
   }));
 }
@@ -216,7 +234,7 @@ export function createWsTools(config: WsConfig) {
         }
         const r: any = await postJson(`${base}/read`, { path: params.path, offset: params.offset ?? 1, limit: params.limit ?? 400 }, signal);
         const suffix = r.truncated ? `\n[lines ${r.offset}-${r.offset + r.lines - 1} of ${r.total_lines}; continue with offset=${r.offset + r.lines}]` : "";
-        return { content: [{ type: "text", text: r.content + suffix }], details: { size: r.size, skill: false, truncated: r.truncated } };
+        return { content: [{ type: "text", text: r.content + suffix }], details: { size: r.size, skill: false, lines: r.lines, totalLines: r.total_lines, truncated: r.truncated } };
       },
     }),
     defineTool({
