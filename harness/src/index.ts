@@ -133,6 +133,43 @@ function formatLspResult(method: string, raw: any): string {
   return JSON.stringify(result, null, 2);
 }
 
+function textComponent(text: string) {
+  return { render: () => text.split("\n"), invalidate: () => {} };
+}
+
+function toolCallSummary(name: string, args: any): string {
+  switch (name) {
+    case "read": return `read ${args.path}${args.offset ? `:${args.offset}` : ""}`;
+    case "bash": return `$ ${args.command}`;
+    case "edit": return `edit ${args.path}`;
+    case "write": return `write ${args.path}`;
+    case "upload": return `upload ${args.local_path} → ${args.remote_path}`;
+    case "grep": return `grep ${JSON.stringify(args.pattern)} ${args.path || "."}`;
+    case "find": return `find ${args.path}${args.name ? ` -name ${args.name}` : ""}`;
+    case "ls": return `ls ${args.path}`;
+    case "spawn": return `spawn ${args.command}`;
+    case "logs": case "status": case "kill": return `${name} ${args.session_id}`;
+    case "sessions": return "sessions";
+    case "lsp": return `lsp ${args.method} ${args.path}${args.line != null ? `:${args.line + 1}:${(args.column || 0) + 1}` : ""}`;
+    case "diagnose": return `diagnose ${args.path}`;
+    case "lsp_servers": case "lsp_sessions": return name;
+    case "pkg_install": case "pkg_remove": return `${name} ${args.package}`;
+    case "pkg_search": return `pkg_search ${JSON.stringify(args.query)}`;
+    case "pkg_list": return "pkg_list";
+    default: return name;
+  }
+}
+
+function renderedTools(tools: any[]) {
+  return tools.map((tool) => ({
+    ...tool,
+    renderCall: (args: any) => textComponent(toolCallSummary(tool.name, args)),
+    renderResult: (result: any) => textComponent(
+      (result.content || []).map((item: any) => item.type === "text" ? item.text : `[${item.type}]`).join("\n") || "(no output)",
+    ),
+  }));
+}
+
 function postJson(url: string, body: unknown, signal?: AbortSignal): Promise<any> {
   return fetch(url, {
     method: "POST",
@@ -151,7 +188,7 @@ function postJson(url: string, body: unknown, signal?: AbortSignal): Promise<any
 export function createWsTools(config: WsConfig) {
   const base = config.serverUrl.replace(/\/+$/, "");
 
-  return [
+  return renderedTools([
     // --- Core file ops ---
     defineTool({
       name: "read",
@@ -472,5 +509,5 @@ export function createWsTools(config: WsConfig) {
       },
       renderCall: (args) => ({ render: () => [`pkg_remove: ${args.package}`], invalidate: () => {} }),
     }),
-  ];
+  ]);
 }
