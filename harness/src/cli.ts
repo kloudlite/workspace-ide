@@ -148,12 +148,18 @@ async function main() {
 
   if (prompts.length === 0) {
     const write = process.stdout.write.bind(process.stdout);
+    const resumable = Boolean(sm.getSessionFile());
+    let wroteResume = false;
     process.stdout.write = ((chunk: any, ...rest: any[]) => {
       if (String(chunk).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").startsWith("To resume this session:")) {
-        if (runtime.session.sessionManager.getSessionFile()) return write("To continue: ws-pi\n");
+        wroteResume = true;
+        return resumable ? write("To continue: ws-pi\n") : true;
       }
       return write(chunk, ...rest);
     }) as typeof process.stdout.write;
+    process.once("exit", () => {
+      if (resumable && !wroteResume) write("To continue: ws-pi\n");
+    });
     const mode = new InteractiveMode(runtime);
     showRemoteWorkspace(mode);
     await mode.run();
