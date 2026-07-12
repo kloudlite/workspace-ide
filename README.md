@@ -291,8 +291,8 @@ docker run -d --name ws \
   -p 8321:8321 \
   -v /nix:/nix \
   -v /path/to/code:/workspace \
-  -v ~/.local/state/nix/ws-profile:/home/karthik/.local/state/nix \
-  -e HOME=/home/karthik \
+  -v ~/.local/state/nix/ws-profile:/home/kl/.local/state/nix \
+  -e HOME=/home/kl \
   -w /workspace \
   ghcr.io/kloudlite/workspace-ide:latest serve
 ```

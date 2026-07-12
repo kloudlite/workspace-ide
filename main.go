@@ -36,7 +36,7 @@ func (m *Ws) buildImage() *dagger.Container {
 			"ca-certificates", "curl", "git",
 			"which", "unzip", "xz-utils", "bzip2",
 		}).
-		WithExec([]string{"sh", "-c", "useradd -u 1000 -m -d /home/karthik karthik && chown -R 1000:1000 /home/karthik"}).
+		WithExec([]string{"sh", "-c", "useradd -u 1000 -m -d /home/kl kl && chown -R 1000:1000 /home/kl"}).
 		WithExec([]string{"apt-get", "clean"}).
 		WithExec([]string{"rm", "-rf", "/var/lib/apt/lists/*"}).
 		WithFile("/usr/local/bin/ws", binary).
