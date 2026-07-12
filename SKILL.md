@@ -5,7 +5,7 @@ description: "Use the ws CLI for remote headless-IDE development: semantic LSP n
 
 # ws CLI
 
-`ws` talks to a remote headless IDE over HTTP. Resolve the server in this order: `--server <url>`, `REMOTE_WS`, then `http://localhost:8321`. Use `--ssh user@host` to tunnel.
+`ws` talks to a remote headless IDE over HTTP. Resolve the server in this order: `--server <url>`, `REMOTE_WS`, then `http://localhost:18765`. Use `--ssh user@host` to tunnel.
 
 ## Development loop
 

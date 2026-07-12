@@ -8,7 +8,7 @@ mod watch;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 
-const DEFAULT_SERVER: &str = "http://localhost:8321";
+const DEFAULT_SERVER: &str = "http://localhost:18765";
 
 #[derive(Parser)]
 #[command(name = "ws", version, about = "Headless IDE remote client & server")]
@@ -24,7 +24,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     Serve {
-        #[arg(short, long, default_value = "8321")]
+        #[arg(short, long, default_value = "18765")]
         port: u16,
     },
     Mcp,

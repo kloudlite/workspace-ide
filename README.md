@@ -3,7 +3,7 @@
 `ws` turns a remote workspace into an IDE-grade HTTP service. `ws-pi` runs the full [pi](https://github.com/earendil-works/pi-coding-agent) TUI against that service with remote file tools, shell execution, persistent language servers, diagnostics, semantic code navigation, package management, and session history.
 
 ```text
-┌──────────── ws-pi / pi TUI ────────────┐       HTTP :8321       ┌──────────┐
+┌──────────── ws-pi / pi TUI ────────────┐      HTTP :18765       ┌──────────┐
 │ read · edit · bash · LSP · packages    │ ─────────────────────▶ │ ws serve │
 │ !commands · @paths · clipboard images  │                        │ workspace│
 └─────────────────────────────────────────┘                        └──────────┘
@@ -28,7 +28,7 @@ AI coding agents should work like a good IDE user:
 
 ```bash
 cargo build --release
-./target/release/ws serve                  # http://0.0.0.0:8321
+./target/release/ws serve                  # http://0.0.0.0:18765
 ```
 
 ### Agent harness
@@ -40,8 +40,8 @@ npm run build
 npm link
 
 cd ..                                      # any existing local directory is valid
-ws-pi --server http://host:8321            # interactive TUI
-ws-pi --server http://host:8321 "fix the failing checkout test"
+ws-pi                                       # http://kmac.khost.dev:18765
+ws-pi "fix the failing checkout test"
 ```
 
 Other harness options:
@@ -52,7 +52,7 @@ ws-pi --session <path>                     # open a session file
 ws-pi --list                               # list sessions for this server
 ```
 
-Sessions are stored under `~/.ws-sessions/<sha256(server-url)[:12]>/`. Different servers have isolated histories; without `--new`, the latest session continues. Pi needs a real local cwd for its session/TUI internals, while every workspace tool remains remote under `/workspace`. The footer displays the remote identity as `http://host:8321:/workspace` rather than the local cwd.
+Sessions are stored under `~/.ws-sessions/<sha256(server-url)[:12]>/`. Different servers have isolated histories; without `--new`, the latest session continues. Pi needs a real local cwd for its session/TUI internals, while every workspace tool remains remote under `/workspace`. The footer displays the remote identity as `kmac.khost.dev:18765:/workspace` rather than the local cwd.
 
 ## ws-pi tools
 
@@ -223,11 +223,11 @@ Server resolution order:
 
 1. `--server <url>`
 2. `REMOTE_WS`
-3. `http://localhost:8321`
+3. `http://localhost:18765`
 
 ```bash
-ws --server http://host:8321 read src/main.rs
-REMOTE_WS=http://host:8321 ws diagnose src/main.rs
+ws --server http://host:18765 read src/main.rs
+REMOTE_WS=http://host:18765 ws diagnose src/main.rs
 ws --ssh user@host bash "git status --short"
 ```
 
@@ -288,7 +288,7 @@ docker pull ghcr.io/kloudlite/workspace-ide:latest
 
 docker run -d --name ws \
   --user 1000:1000 \
-  -p 8321:8321 \
+  -p 18765:18765 \
   -v /nix:/nix \
   -v /path/to/code:/workspace \
   -v ~/.local/state/nix/ws-profile:/home/kl/.local/state/nix \

@@ -49,7 +49,7 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-if (!serverUrl) serverUrl = "http://localhost:8321";
+if (!serverUrl) serverUrl = "http://kmac.khost.dev:18765";
 
 // ponytail: hash server URL into a safe dir name — different connections get isolated sessions
 const sessionDir = join(homedir(), ".ws-sessions", createHash("sha256").update(serverUrl).digest("hex").slice(0, 12));
@@ -150,7 +150,7 @@ async function main() {
     const write = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((chunk: any, ...rest: any[]) => {
       if (String(chunk).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").startsWith("To resume this session:")) {
-        if (runtime.session.sessionManager.getSessionFile()) return write(`To continue: ws-pi --server ${serverUrl}\n`);
+        if (runtime.session.sessionManager.getSessionFile()) return write("To continue: ws-pi\n");
       }
       return write(chunk, ...rest);
     }) as typeof process.stdout.write;
