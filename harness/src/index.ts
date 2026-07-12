@@ -139,7 +139,7 @@ function textComponent(text: string) {
 
 function toolCallSummary(name: string, args: any): string {
   switch (name) {
-    case "read": return `read ${args.path}${args.offset ? `:${args.offset}` : ""} [expand to view]`;
+    case "read": return `read ${args.path}${args.offset ? `:${args.offset}` : ""}`;
     case "bash": return `$ ${args.command}`;
     case "edit": return `edit ${args.path}`;
     case "write": return `write ${args.path}`;
@@ -182,14 +182,18 @@ function collapsedToolResult(name: string, args: any, result: any, text: string)
 }
 
 function renderedTools(tools: any[]) {
-  return tools.map((tool) => ({
-    ...tool,
-    renderCall: (args: any) => textComponent(toolCallSummary(tool.name, args)),
-    renderResult: (result: any, options: any, _theme: any, context: any) => {
-      const text = toolResultText(result);
-      return textComponent(options.expanded || context.isError ? text : collapsedToolResult(tool.name, context.args, result, text));
-    },
-  }));
+  return tools.map((tool) => {
+    // Pi's built-in read renderer only formats the result; unlike edit, it never reads cwd.
+    if (tool.name === "read") return tool;
+    return {
+      ...tool,
+      renderCall: (args: any) => textComponent(toolCallSummary(tool.name, args)),
+      renderResult: (result: any, options: any, _theme: any, context: any) => {
+        const text = toolResultText(result);
+        return textComponent(options.expanded || context.isError ? text : collapsedToolResult(tool.name, context.args, result, text));
+      },
+    };
+  });
 }
 
 function postJson(url: string, body: unknown, signal?: AbortSignal): Promise<any> {
