@@ -55,6 +55,18 @@ if (!serverUrl) serverUrl = "http://localhost:8321";
 const sessionDir = join(homedir(), ".ws-sessions", createHash("sha256").update(serverUrl).digest("hex").slice(0, 12));
 // Pi requires an existing local cwd for sessions and TUI links. Remote tools use /workspace server-side.
 const localCwd = process.cwd();
+const remoteCwd = "/workspace";
+
+function showRemoteWorkspace(mode: InteractiveMode) {
+  const footer = (mode as any).footer;
+  const render = footer.render.bind(footer);
+  footer.render = (width: number) => {
+    const lines = render(width);
+    const remote = `${serverUrl}:${remoteCwd}`;
+    lines[0] = remote.length > width ? `${remote.slice(0, Math.max(0, width - 3))}...` : remote;
+    return lines;
+  };
+}
 
 async function main() {
   // ponytail: extension reads WS_SERVER_URL from env
@@ -133,6 +145,7 @@ async function main() {
 
   if (prompts.length === 0) {
     const mode = new InteractiveMode(runtime);
+    showRemoteWorkspace(mode);
     await mode.run();
   } else {
     const exitCode = await runPrintMode(runtime, {
