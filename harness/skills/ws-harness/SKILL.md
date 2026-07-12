@@ -142,7 +142,7 @@ LSP rename, code-action, and formatting responses are previews; file mutation re
 
 - `bash`: finite commands; each invocation is a fresh shell, so chain dependent commands with `&&`.
 - Never append `|| true` to tests, builds, diagnostics, or diff checks: it hides failure. Run optional searches separately.
-- Use the `grep` tool for searches instead of assuming `rg` or another CLI is installed.
+- Use the `grep` tool for workspace searches instead of assuming `rg` or another CLI is installed. For tracked-source checks after deleting files, use `git grep`; never pipe `git ls-files` into grep because the index still lists deleted paths until commit, causing ENOENT.
 - `spawn`: dev servers, watchers, or any persistent process.
 - `logs`, `status`, `kill`, `sessions`: manage spawned processes.
 - Never block `bash` on a watcher/server that does not exit.

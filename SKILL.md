@@ -109,7 +109,7 @@ ws kill <session_id>
 ws sessions
 ```
 
-Never run a persistent process through blocking `bash`.
+Never run a persistent process through blocking `bash`. After deleting tracked files, use `git grep` for source checks; do not pipe `git ls-files` into grep because the index still lists deleted paths until commit and causes ENOENT.
 
 ## Packages
 
