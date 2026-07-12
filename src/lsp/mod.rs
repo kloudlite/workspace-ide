@@ -51,6 +51,7 @@ struct Session {
     stdin: Arc<AsyncMutex<ChildStdin>>,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
     diags: Arc<Mutex<HashMap<String, Vec<Diagnostic>>>>,
+    documents: Arc<Mutex<HashMap<String, String>>>,
     versions: Arc<Mutex<HashMap<String, i32>>>,
     last_active: Instant,
 }
@@ -158,6 +159,7 @@ async fn get_session(svr: &server::LspServer, file_path: &str) -> Result<Session
         stdin: Arc::new(AsyncMutex::new(stdin)),
         pending,
         diags,
+        documents: Arc::new(Mutex::new(HashMap::new())),
         versions: Arc::new(Mutex::new(HashMap::new())),
         last_active: Instant::now(),
     };
@@ -169,10 +171,27 @@ async fn sync_document(
     session: &Session,
     svr: &server::LspServer,
     file_path: &str,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let content = tokio::fs::read_to_string(file_path)
         .await
         .map_err(|e| format!("read {}: {}", file_path, e))?;
+    let changed = {
+        let mut documents = session.documents.lock().unwrap();
+        if documents
+            .get(file_path)
+            .is_some_and(|previous| previous == &content)
+        {
+            false
+        } else {
+            documents.insert(file_path.to_string(), content.clone());
+            true
+        }
+    };
+    if !changed {
+        return Ok(false);
+    }
+
+    session.diags.lock().unwrap().remove(file_path);
     let version = {
         let mut versions = session.versions.lock().unwrap();
         let version = versions.entry(file_path.to_string()).or_insert(0);
@@ -191,7 +210,7 @@ async fn sync_document(
     } else {
         send_did_change(&mut stdin, file_path, version, &content).await;
     }
-    Ok(())
+    Ok(true)
 }
 
 pub async fn lsp_request(
@@ -206,7 +225,7 @@ pub async fn lsp_request(
         .next()
         .ok_or_else(|| format!("no LSP server for {}", ext))?;
     let session = get_session(svr, &file_path).await?;
-    sync_document(&session, svr, &file_path).await?;
+    let _ = sync_document(&session, svr, &file_path).await?;
 
     let id = NEXT_REQ_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let (tx, rx) = oneshot::channel();
@@ -244,8 +263,13 @@ pub async fn diagnose_file(file_path: &str) -> Result<Vec<Diagnostic>, String> {
     for svr in servers {
         let sid = svr.id.to_string();
         let session = get_session(svr, &file_path).await?;
-        session.diags.lock().unwrap().remove(&file_path);
-        sync_document(&session, svr, &file_path).await?;
+        let changed = sync_document(&session, svr, &file_path).await?;
+        if !changed {
+            if let Some(diags) = session.diags.lock().unwrap().get(&file_path).cloned() {
+                all_diags.extend(diags);
+                continue;
+            }
+        }
 
         let mut published = None;
         for _ in 0..600 {

@@ -96,10 +96,10 @@ pub static SERVERS: &[LspServer] = &[
         id: "json-ls",
         language_id: "json",
         extensions: &[".json", ".jsonc"],
-        binary: "json-languageserver",
+        binary: "vscode-json-languageserver",
         args: &["--stdio"],
         root_mode: RootMode::Workspace,
-        nix_packages: &[],
+        nix_packages: &["nodePackages.vscode-json-languageserver"],
     },
 ];
 
