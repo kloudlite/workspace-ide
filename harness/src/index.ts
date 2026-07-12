@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import { defineTool, keyHint, truncateToVisualLines } from "@earendil-works/pi-coding-agent";
 import { generateDiffString, normalizeToLF } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/tools/edit-diff.js";
 import { renderDiff } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/diff.js";
+import { createFindToolDefinition } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/tools/find.js";
 import { readFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join, resolve, sep } from "path";
@@ -190,10 +191,18 @@ function collapsedToolResult(name: string, args: any, result: any, text: string)
   return `${preview.join("\n")}\n… (${omitted} ${position} lines${truncated ? ", output truncated" : ""}, ${keyHint("app.tools.expand", "to expand")})`;
 }
 
+// ponytail: only use Pi's renderer; its executor would search the local cwd.
+const nativeFindRenderer = createFindToolDefinition(process.cwd());
+
 function renderedTools(tools: any[]) {
   return tools.map((tool) => {
     // These built-in renderers format results only; edit is the exception because it reads cwd.
     if (["read", "bash", "grep", "ls", "write"].includes(tool.name)) return tool;
+    if (tool.name === "find") return {
+      ...tool,
+      renderCall: (args: any, theme: any, context: any) => nativeFindRenderer.renderCall!({ ...args, pattern: args.name || "*" }, theme, context),
+      renderResult: (result: any, options: any, theme: any, context: any) => nativeFindRenderer.renderResult!(result, options, theme, context),
+    };
     return {
       ...tool,
       renderCall: (args: any, theme: any) => textComponent(toolCallSummary(tool.name, args, theme)),
@@ -353,7 +362,7 @@ export function createWsTools(config: WsConfig) {
         const r: any = await postJson(`${base}/find`, body, signal);
         const files = (r.files || []).join("\n");
         const text = (files || "(no files)") + (r.truncated ? "\n[truncated at 200 files; narrow path or pattern]" : "");
-        return { content: [{ type: "text", text }], details: {} };
+        return { content: [{ type: "text", text }], details: { resultLimitReached: r.truncated ? 200 : undefined } };
       },
     }),
     defineTool({
