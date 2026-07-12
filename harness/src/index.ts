@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool, keyHint } from "@earendil-works/pi-coding-agent";
 import { readFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join, resolve, sep } from "path";
@@ -137,26 +137,28 @@ function textComponent(text: string) {
   return { render: () => text.split("\n"), invalidate: () => {} };
 }
 
-function toolCallSummary(name: string, args: any): string {
+function toolCallSummary(name: string, args: any, theme?: any): string {
+  const title = (text: string) => theme ? theme.fg("toolTitle", theme.bold(text)) : text;
+  const accent = (text: string) => theme ? theme.fg("accent", text) : text;
+  const muted = (text: string) => theme ? theme.fg("muted", text) : text;
   switch (name) {
-    case "read": return `read ${args.path}${args.offset ? `:${args.offset}` : ""}`;
-    case "bash": return `$ ${args.command}`;
-    case "edit": return `edit ${args.path}`;
-    case "write": return `write ${args.path}`;
-    case "upload": return `upload ${args.local_path} → ${args.remote_path}`;
-    case "grep": return `grep ${JSON.stringify(args.pattern)} ${args.path || "."}`;
-    case "find": return `find ${args.path}${args.name ? ` -name ${args.name}` : ""}`;
-    case "ls": return `ls ${args.path}`;
-    case "spawn": return `spawn ${args.command}`;
-    case "logs": case "status": case "kill": return `${name} ${args.session_id}`;
-    case "sessions": return "sessions";
-    case "lsp": return `lsp ${args.method} ${args.path}${args.line != null ? `:${args.line + 1}:${(args.column || 0) + 1}` : ""}`;
-    case "diagnose": return `diagnose ${args.path}`;
-    case "lsp_servers": case "lsp_sessions": return name;
-    case "pkg_install": case "pkg_remove": return `${name} ${args.package}`;
-    case "pkg_search": return `pkg_search ${JSON.stringify(args.query)}`;
-    case "pkg_list": return "pkg_list";
-    default: return name;
+    case "read": return `${title("read")} ${accent(args.path)}${args.offset ? muted(`:${args.offset}`) : ""}`;
+    case "bash": return `${title("$")} ${accent(args.command)}`;
+    case "edit": case "write": return `${title(name)} ${accent(args.path)}`;
+    case "upload": return `${title("upload")} ${accent(args.local_path)}${muted(" → ")}${accent(args.remote_path)}`;
+    case "grep": return `${title("grep")} ${accent(`/${args.pattern}/`)}${muted(` in ${args.path || "."}`)}`;
+    case "find": return `${title("find")} ${accent(args.name || "*")}${muted(` in ${args.path}`)}`;
+    case "ls": return `${title("ls")} ${accent(args.path || ".")}`;
+    case "spawn": return `${title("spawn")} ${accent(args.command)}`;
+    case "logs": case "status": case "kill": return `${title(name)} ${accent(args.session_id)}`;
+    case "sessions": return title("sessions");
+    case "lsp": return `${title("lsp")} ${accent(args.method)}${muted(` ${args.path}${args.line != null ? `:${args.line + 1}:${(args.column || 0) + 1}` : ""}`)}`;
+    case "diagnose": return `${title("diagnose")} ${accent(args.path)}`;
+    case "lsp_servers": case "lsp_sessions": return title(name.replace("_", " "));
+    case "pkg_install": case "pkg_remove": return `${title(name.replace("_", " "))} ${accent(args.package)}`;
+    case "pkg_search": return `${title("pkg search")} ${accent(JSON.stringify(args.query))}`;
+    case "pkg_list": return title("pkg list");
+    default: return title(name);
   }
 }
 
@@ -178,19 +180,19 @@ function collapsedToolResult(name: string, args: any, result: any, text: string)
   const omitted = lines.length - preview.length;
   const position = tail ? "earlier" : "more";
   const truncated = details.truncated || text.includes("[truncated");
-  return `${preview.join("\n")}\n… (${omitted} ${position} lines${truncated ? ", output truncated" : ""}; expand to view)`;
+  return `${preview.join("\n")}\n… (${omitted} ${position} lines${truncated ? ", output truncated" : ""}, ${keyHint("app.tools.expand", "to expand")})`;
 }
 
 function renderedTools(tools: any[]) {
   return tools.map((tool) => {
     // These built-in renderers format results only; edit is the exception because it reads cwd.
-    if (["read", "bash"].includes(tool.name)) return tool;
+    if (["read", "bash", "grep", "ls", "write"].includes(tool.name)) return tool;
     return {
       ...tool,
-      renderCall: (args: any) => textComponent(toolCallSummary(tool.name, args)),
-      renderResult: (result: any, options: any, _theme: any, context: any) => {
-        const text = toolResultText(result);
-        return textComponent(options.expanded || context.isError ? text : collapsedToolResult(tool.name, context.args, result, text));
+      renderCall: (args: any, theme: any) => textComponent(toolCallSummary(tool.name, args, theme)),
+      renderResult: (result: any, options: any, theme: any, context: any) => {
+        const text = options.expanded || context.isError ? toolResultText(result) : collapsedToolResult(tool.name, context.args, result, toolResultText(result));
+        return textComponent(theme.fg(context.isError ? "error" : "toolOutput", text));
       },
     };
   });
