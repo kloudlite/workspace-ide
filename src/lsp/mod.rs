@@ -378,7 +378,11 @@ async fn send_initialize(stdin: &mut ChildStdin, root: &str) -> Result<(), Strin
             "rootUri": format!("file://{}", root),
             "workspaceFolders": [{ "uri": format!("file://{}", root), "name": "workspace" }],
             "clientInfo": { "name": "ws", "version": "0.1.0" },
-            "capabilities": {}
+            "capabilities": {
+                "textDocument": {
+                    "publishDiagnostics": { "relatedInformation": true }
+                }
+            }
         }
     });
     write_msg(stdin, &msg).await;
