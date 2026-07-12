@@ -39,6 +39,7 @@ npm install
 npm run build
 npm link
 
+cd ..                                      # any existing local directory is valid
 ws-pi --server http://host:8321            # interactive TUI
 ws-pi --server http://host:8321 "fix the failing checkout test"
 ```
@@ -51,7 +52,7 @@ ws-pi --session <path>                     # open a session file
 ws-pi --list                               # list sessions for this server
 ```
 
-Sessions are stored under `~/.ws-sessions/<sha256(server-url)[:12]>/`. Different servers have isolated histories; without `--new`, the latest session continues.
+Sessions are stored under `~/.ws-sessions/<sha256(server-url)[:12]>/`. Different servers have isolated histories; without `--new`, the latest session continues. Pi needs a real local cwd for its session/TUI internals, while every workspace tool remains remote under `/workspace`. The footer displays the remote identity as `http://host:8321:/workspace` rather than the local cwd.
 
 ## ws-pi tools
 
@@ -99,7 +100,7 @@ Tool output is intentionally bounded:
 
 Truncated results are never presented as complete. Narrow the project path, query, symbol, or range before acting.
 
-All tool output is human/model readable rather than raw API JSON: paths and 1-indexed locations for LSP, symbol kind labels, named diagnostic severities, explicit shell exit codes and stderr, mutation byte/replacement counts, full reusable background session IDs, and line-oriented lists. File content itself remains raw so exact edits stay reliable.
+All tool output is human/model readable rather than raw API JSON: paths and 1-indexed locations for LSP, symbol kind labels, named diagnostic severities, explicit shell exit codes and stderr, mutation byte/replacement counts, full reusable background session IDs, and line-oriented lists. Built-in Pi renderers provide normal collapsed previews for `read`, `bash`, `grep`, `ls`, and `write`; remote-only tools use the same compact/expand convention. Renderer output wraps to terminal width, while file content remains raw to the model so exact edits stay reliable.
 
 ## Language intelligence
 
@@ -119,7 +120,7 @@ Typical warm requests complete in tens of milliseconds; the first request may wa
 | Lua | `lua-language-server` | workspace |
 | Bash/Zsh | `bash-language-server` | workspace |
 | YAML | `yaml-language-server` | workspace |
-| JSON | `json-languageserver` | workspace |
+| JSON | `vscode-json-languageserver` | workspace |
 
 Simple filetype servers share one workspace session; project-aware servers remain isolated by project root.
 
@@ -214,7 +215,7 @@ ws pkg apply
 ws pkg sync
 ```
 
-Project dependencies continue to use the repository's existing package manager (`pnpm`, `npm`, `bun`, `cargo`, `go mod`, etc.). `ws.yaml` records workspace tools and `ws.lock` pins them; commit both when tool state changes. Package restoration runs when the server starts. Profile entries are canonicalized by package attribute and installation is idempotent, preventing reconcile loops such as repeated `nodejs-N` entries.
+Project dependencies continue to use the repository's existing package manager (`pnpm`, `npm`, `bun`, `cargo`, `go mod`, etc.). `ws.yaml` records workspace tools and `ws.lock` pins them; commit both when tool state changes. The container image does not bundle language servers: on `ws serve` startup, missing servers for detected workspace languages install into the mounted writable profile, then persist across container restarts. Profile entries are canonicalized by package attribute and installation is idempotent, preventing reconcile loops such as repeated `nodejs-N` entries.
 
 ## Standalone CLI
 
