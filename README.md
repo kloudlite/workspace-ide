@@ -32,17 +32,17 @@ npm link
 
 ### 3. Start coding
 
-The default server is `kmac.khost.dev:18765`:
+Set your remote server once in your shell; a hostname is enough because `ws-pi` supplies HTTP and port `18765`:
 
 ```bash
+export WS_SERVER_URL=dev.example.com
 ws-pi
 ws-pi "fix the failing checkout test"
 ```
 
-For another server, a hostname is enough; `ws-pi` supplies HTTP and port `18765`:
+Without `WS_SERVER_URL`, `ws-pi` uses `localhost:18765`. You can override either for one run:
 
 ```bash
-ws-pi --server dev.example.com
 ws-pi --server dev.example.com --new       # start a fresh conversation
 ws-pi --list                               # list saved conversations for this server
 ```

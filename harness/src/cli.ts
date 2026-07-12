@@ -49,7 +49,7 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-if (!serverUrl) serverUrl = "http://kmac.khost.dev:18765";
+if (!serverUrl) serverUrl = "http://localhost:18765";
 if (!serverUrl.includes("://")) serverUrl = `http://${serverUrl}${serverUrl.includes(":") ? "" : ":18765"}`;
 const serverLabel = serverUrl.replace(/^https?:\/\//, "").replace(/:18765$/, "");
 
