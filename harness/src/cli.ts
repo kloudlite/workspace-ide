@@ -147,6 +147,14 @@ async function main() {
   });
 
   if (prompts.length === 0) {
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: any, ...rest: any[]) => {
+      if (typeof chunk === "string" && chunk.startsWith("To resume this session:")) {
+        const file = runtime.session.sessionManager.getSessionFile();
+        if (file) return write(`To resume this session: ws-pi --server ${serverUrl} --session ${file}\n`);
+      }
+      return write(chunk, ...rest);
+    }) as typeof process.stdout.write;
     const mode = new InteractiveMode(runtime);
     showRemoteWorkspace(mode);
     await mode.run();
