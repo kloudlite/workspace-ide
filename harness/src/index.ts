@@ -1,5 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import { defineTool, keyHint, truncateToVisualLines } from "@earendil-works/pi-coding-agent";
+import { generateDiffString, normalizeToLF } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/tools/edit-diff.js";
+import { renderDiff } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/diff.js";
 import { readFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join, resolve, sep } from "path";
@@ -197,7 +199,9 @@ function renderedTools(tools: any[]) {
       renderCall: (args: any, theme: any) => textComponent(toolCallSummary(tool.name, args, theme)),
       renderResult: (result: any, options: any, theme: any, context: any) => {
         const raw = toolResultText(result);
-        const formatted = tool.name === "lsp" ? formatLspResult(context.args.method, raw) : raw;
+        const formatted = tool.name === "edit" && result.details?.diff
+          ? renderDiff(result.details.diff)
+          : tool.name === "lsp" ? formatLspResult(context.args.method, raw) : raw;
         const text = options.expanded || context.isError ? formatted : collapsedToolResult(tool.name, context.args, result, formatted);
         return textComponent(theme.fg(context.isError ? "error" : "toolOutput", text));
       },
@@ -272,12 +276,17 @@ export function createWsTools(config: WsConfig) {
         newText: Type.String({ description: "Replacement text" }),
       }),
       execute: async (_id, params: { path: string; oldText: string; newText: string }, signal) => {
+        const before: any = await postJson(`${base}/read`, { path: params.path }, signal);
         const r: any = await postJson(`${base}/edit`, {
           path: params.path,
           edits: [{ old_text: params.oldText, new_text: params.newText }],
         }, signal);
+        const after = before.content.includes(params.oldText)
+          ? before.content.split(params.oldText).join(params.newText)
+          : before.content;
+        const diff = generateDiffString(normalizeToLF(before.content), normalizeToLF(after)).diff;
         const errors = r.errors?.length ? `\n${r.errors.map((e: string) => `! ${e}`).join("\n")}` : "";
-        return { content: [{ type: "text", text: `updated ${params.path} — ${r.applied} replacement${r.applied === 1 ? "" : "s"}${errors}` }], details: { applied: r.applied } };
+        return { content: [{ type: "text", text: `updated ${params.path} — ${r.applied} replacement${r.applied === 1 ? "" : "s"}${errors}` }], details: { applied: r.applied, diff } };
       },
     }),
     defineTool({
