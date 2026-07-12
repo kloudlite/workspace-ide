@@ -150,8 +150,7 @@ async function main() {
     const write = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((chunk: any, ...rest: any[]) => {
       if (String(chunk).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").startsWith("To resume this session:")) {
-        const file = runtime.session.sessionManager.getSessionFile();
-        if (file) return write(`To resume this session: ws-pi --server ${serverUrl} --session ${file}\n`);
+        if (runtime.session.sessionManager.getSessionFile()) return write(`To continue: ws-pi --server ${serverUrl}\n`);
       }
       return write(chunk, ...rest);
     }) as typeof process.stdout.write;
