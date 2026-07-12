@@ -139,7 +139,7 @@ function textComponent(text: string) {
 
 function toolCallSummary(name: string, args: any): string {
   switch (name) {
-    case "read": return `read ${args.path}${args.offset ? `:${args.offset}` : ""}`;
+    case "read": return `read ${args.path}${args.offset ? `:${args.offset}` : ""} [expand to view]`;
     case "bash": return `$ ${args.command}`;
     case "edit": return `edit ${args.path}`;
     case "write": return `write ${args.path}`;
@@ -166,11 +166,7 @@ function toolResultText(result: any): string {
 
 function collapsedToolResult(name: string, args: any, result: any, text: string): string {
   const details = result.details || {};
-  if (name === "read") {
-    const lines = details.lines || text.split("\n").filter((line: string) => !line.startsWith("[lines ")).length;
-    const total = details.totalLines || details.total_lines || lines;
-    return `read ${args.path} — ${lines} of ${total} lines${details.truncated ? " (truncated)" : ""} [expand to view]`;
-  }
+  if (name === "read") return "";
   if (text === "(no diagnostics)" || text === "(no output)") return text;
 
   const lines = text.split("\n");
