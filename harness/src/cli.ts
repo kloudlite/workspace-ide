@@ -53,13 +53,14 @@ if (!serverUrl) serverUrl = "http://localhost:8321";
 
 // ponytail: hash server URL into a safe dir name — different connections get isolated sessions
 const sessionDir = join(homedir(), ".ws-sessions", createHash("sha256").update(serverUrl).digest("hex").slice(0, 12));
+const workspaceCwd = "/workspace";
 
 async function main() {
   // ponytail: extension reads WS_SERVER_URL from env
   process.env.WS_SERVER_URL = serverUrl;
   // --list
   if (args.includes("--list")) {
-    const sessions = await SessionManager.list(homedir(), sessionDir);
+    const sessions = await SessionManager.listAll(sessionDir);
     if (sessions.length === 0) {
       console.log("No sessions found.");
     } else {
@@ -75,11 +76,12 @@ async function main() {
   // Default: continue most recent session. --new forces fresh. --session opens a specific one.
   let sm: SessionManager;
   if (sessionFile) {
-    sm = SessionManager.open(sessionFile, sessionDir, homedir());
+    sm = SessionManager.open(sessionFile, sessionDir, workspaceCwd);
   } else if (newSession) {
-    sm = SessionManager.create(homedir(), sessionDir);
+    sm = SessionManager.create(workspaceCwd, sessionDir);
   } else {
-    sm = SessionManager.continueRecent(homedir(), sessionDir);
+    const [recent] = await SessionManager.listAll(sessionDir);
+    sm = recent ? SessionManager.open(recent.path, sessionDir, workspaceCwd) : SessionManager.create(workspaceCwd, sessionDir);
   }
 
   // Let user know which session is active
@@ -123,7 +125,7 @@ async function main() {
   };
 
   const runtime = await createAgentSessionRuntime(createRuntime, {
-    cwd: "/workspace",
+    cwd: workspaceCwd,
     agentDir: getAgentDir(),
     sessionManager: sm,
   });
