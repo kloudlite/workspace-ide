@@ -62,8 +62,11 @@ function showRemoteWorkspace(mode: InteractiveMode) {
   const render = footer.render.bind(footer);
   footer.render = (width: number) => {
     const lines = render(width);
-    const remote = `${serverUrl}:${remoteCwd}`;
-    lines[0] = remote.length > width ? `${remote.slice(0, Math.max(0, width - 3))}...` : remote;
+    const remote = `${serverUrl.replace(/^[a-z]+:\/\//i, "")}:${remoteCwd}`;
+    const display = remote.length > width ? `${remote.slice(0, Math.max(0, width - 3))}...` : remote;
+    // Preserve Pi's dim ANSI wrapper from the built-in cwd line.
+    const plain = lines[0].replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+    lines[0] = lines[0].replace(plain, display);
     return lines;
   };
 }
