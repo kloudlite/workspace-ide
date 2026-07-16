@@ -35,17 +35,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      - name: Install current npm
+        run: npm install -g npm@latest
       - name: Install ws-pi
         run: npm ci --prefix harness
       - name: Verify release version
         run: test "v$(node -p \"require('./harness/package.json').version\")" = "$GITHUB_REF_NAME"
       - name: Publish ws-pi
-        run: npm publish --prefix harness --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --prefix harness --access public --provenance
