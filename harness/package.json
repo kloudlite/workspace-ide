@@ -21,5 +21,8 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.6",
     "@sinclair/typebox": "^0.34.49"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }

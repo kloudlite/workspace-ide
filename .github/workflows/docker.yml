@@ -29,3 +29,23 @@ jobs:
           dagger call publish --address ghcr.io/kloudlite/workspace-ide:$TAG
         env:
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+
+  publish-npm:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Install ws-pi
+        run: npm ci --prefix harness
+      - name: Verify release version
+        run: test "v$(node -p \"require('./harness/package.json').version\")" = "$GITHUB_REF_NAME"
+      - name: Publish ws-pi
+        run: npm publish --prefix harness --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
