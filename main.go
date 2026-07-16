@@ -17,6 +17,24 @@ func (m *Ws) Publish(ctx context.Context, address string) (string, error) {
 	return m.buildImage().Publish(ctx, address)
 }
 
+// Harness builds the ws-pi npm package.
+func (m *Ws) Harness() *dagger.Container {
+	return dag.Container().
+		From("node:22-bookworm-slim").
+		WithDirectory("/app", dag.CurrentModule().Source().Directory("harness")).
+		WithWorkdir("/app").
+		WithExec([]string{"npm", "ci"}).
+		WithExec([]string{"npm", "run", "build"})
+}
+
+// PublishHarness publishes ws-pi to npm. npmToken is never written to the source tree.
+func (m *Ws) PublishHarness(ctx context.Context, npmToken *dagger.Secret) (string, error) {
+	return m.Harness().
+		WithSecretVariable("NPM_TOKEN", npmToken).
+		WithExec([]string{"sh", "-ec", "trap 'rm -f .npmrc' EXIT; printf '%s\\n' \"//registry.npmjs.org/:_authToken=${NPM_TOKEN}\" > .npmrc; npm publish --access public"}).
+		Stdout(ctx)
+}
+
 // --- internal helpers ---
 
 func (m *Ws) buildImage() *dagger.Container {

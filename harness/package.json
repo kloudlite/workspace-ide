@@ -1,20 +1,25 @@
 {
-  "name": "@ws-harness/harness",
-  "version": "0.0.1",
-  "private": true,
+  "name": "@kloudlite/ws-pi",
+  "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "ws-pi": "./dist/cli.js"
+    "ws-pi": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "skills"
+  ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "prepack": "npm run build"
   },
-  "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.6"
+  "engines": {
+    "node": ">=22.19.0"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.6",
     "@sinclair/typebox": "^0.34.49"
   }
 }

@@ -34,11 +34,13 @@ The image is intentionally small: missing language servers install into the moun
 ### 2. Install `ws-pi` once
 
 ```bash
-git clone https://github.com/kloudlite/workspace-ide.git
-cd workspace-ide/harness
-npm install
-npm run build
-npm link
+npm install -g @kloudlite/ws-pi
+```
+
+Or with Bun:
+
+```bash
+bun add -g @kloudlite/ws-pi
 ```
 
 ### 3. Start coding
