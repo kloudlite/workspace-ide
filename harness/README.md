@@ -1,6 +1,6 @@
 # @kloudlite/ws-pi
 
-Use [pi](https://github.com/earendil-works/pi-coding-agent) against a remote `ws` workspace.
+Use [pi](https://github.com/earendil-works/pi-coding-agent) against a remote `ws` workspace. Requires Node.js 22.19 or later.
 
 ```sh
 npm install -g @kloudlite/ws-pi

@@ -33,6 +33,8 @@ The image is intentionally small: missing language servers install into the moun
 
 ### 2. Install `ws-pi` once
 
+Requires Node.js 22.19 or later.
+
 ```bash
 npm install -g @kloudlite/ws-pi
 ```
@@ -49,7 +51,7 @@ Set your remote server once in your shell; a hostname is enough because `ws-pi` 
 
 ```bash
 export WS_SERVER_URL=dev.example.com
-ws-pi
+ws-pi                              # connects to dev.example.com:18765
 ws-pi "fix the failing checkout test"
 ```
 
