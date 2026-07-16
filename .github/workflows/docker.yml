@@ -50,4 +50,4 @@ jobs:
           version=$(node -p "require('./harness/package.json').version")
           test "v$version" = "$GITHUB_REF_NAME"
       - name: Publish ws-pi
-        run: npm publish --prefix harness --access public --provenance
+        run: npm --prefix harness publish --access public --provenance
