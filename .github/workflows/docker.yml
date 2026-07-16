@@ -41,12 +41,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
       - name: Install current npm
         run: npm install -g npm@latest
       - name: Install ws-pi
         run: npm ci --prefix harness
       - name: Verify release version
-        run: test "v$(node -p \"require('./harness/package.json').version\")" = "$GITHUB_REF_NAME"
+        run: |
+          version=$(node -p "require('./harness/package.json').version")
+          test "v$version" = "$GITHUB_REF_NAME"
       - name: Publish ws-pi
         run: npm publish --prefix harness --access public --provenance
